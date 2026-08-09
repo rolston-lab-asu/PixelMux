@@ -21,11 +21,23 @@ import sys
 
 def main():
     from PySide6.QtWidgets import QApplication
+    from PySide6.QtGui import QIcon
+    from core.paths import get_icon_path
     from gui.splash import build_splash, splash_message
 
     mock = "--mock" in sys.argv
 
+    # Windows groups windows in the taskbar by their host process (python.exe)
+    # unless the process claims its own "App User Model ID"
+    if sys.platform == "win32":
+        import ctypes
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MultiplexSim.App")
+        except Exception:
+            pass  # cosmetic only, never worth failing startup over
+
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(get_icon_path()))
 
     # --- Stage 1: splash appears before any heavy imports ---
     splash = build_splash(app)
@@ -44,6 +56,7 @@ def main():
 
     pg.setConfigOptions(antialias=True)
     window = MainWindow(mock=mock)
+    window.setWindowIcon(app.windowIcon())
 
     splash.finish(window)
     window.show()

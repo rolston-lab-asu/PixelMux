@@ -1,11 +1,13 @@
 """
-JV "CONFIG" tab: sweep-parameter form on the left, substrate diagram +
-dataset card on the right. Owns and validates its own inputs.
+DIT "CONFIG" tab: voltage-step + acquisition parameter form on the left,
+substrate diagram + dataset card on the right. 
+
+Split into a "Voltage Step" group and an "Acquisition" group.
 """
 from atom.api import Atom, Bool, Event, List, Typed
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget, QFrame, QHBoxLayout, QVBoxLayout, QLabel,
+    QWidget, QFrame, QGridLayout, QHBoxLayout, QVBoxLayout, QLabel,
     QCheckBox, QPushButton, QLineEdit, QLayout, QStyle,
 )
 
@@ -14,8 +16,10 @@ from gui.custom_widgets import NoWheelComboBox, PlainIntField, PlainDoubleField
 from gui.common_panels.substrate_panel import SubstratePanel
 from gui.effects import make_panel_shadow, update_shadow_color
 
+_SENSE_RANGES = ["AUTO", "1e-3", "100e-6", "10e-6", "1e-6", "100e-9"]
 
-class JVConfigPanel(Atom):
+
+class DITConfigPanel(Atom):
     __slots__ = ('__weakref__',)
 
     is_dark_mode = Bool(False)
@@ -29,24 +33,33 @@ class JVConfigPanel(Atom):
 
     _widget = Typed(QWidget)
 
-    # Sweep-parameter inputs
-    _v0 = Typed(PlainDoubleField)
+    # Voltage-step inputs
     _v1 = Typed(PlainDoubleField)
-    _points = Typed(PlainIntField)
-    _dir = Typed(NoWheelComboBox)
-    _loops = Typed(PlainIntField)
-    _point_delay = Typed(PlainDoubleField)
-    _compliance_ma = Typed(PlainDoubleField)
-    _pin = Typed(PlainDoubleField)
-    _start_btn = Typed(QPushButton)
+    _v2 = Typed(PlainDoubleField)
+    _hold1 = Typed(PlainDoubleField)
+    _hold2 = Typed(PlainDoubleField)
+    _repetitions = Typed(PlainIntField)
+    _recovery = Typed(PlainDoubleField)
 
+    # Acquisition inputs
+    _trigger_delay = Typed(PlainDoubleField)
+    _integration = Typed(PlainDoubleField)
+    _current_limit_ma = Typed(PlainDoubleField)
+    _sense_range = Typed(NoWheelComboBox)
+    _fudge = Typed(PlainDoubleField)
+    _chunk_points = Typed(PlainIntField)
+    _four_wire = Typed(QCheckBox)
+    _autozero = Typed(QCheckBox)
+    _log_plot = Typed(QCheckBox)
+
+    _start_btn = Typed(QPushButton)
     _top_layout = Typed(QHBoxLayout)
     _sweep_panel = Typed(QFrame)
     _shadow_widgets = List()
 
     _substrate = Typed(SubstratePanel)
 
-    # Dataset card: Name field, browse icon button, auto-save toggle + path preview
+    # Dataset card
     _name_field = Typed(QLineEdit)
     _autosave_table_checkbox = Typed(QCheckBox)
     _autosave_curves_checkbox = Typed(QCheckBox)
@@ -68,17 +81,17 @@ class JVConfigPanel(Atom):
         self._widget = container
         return container
 
-    # --- Sweep panel ---
+    # --- Voltage-step / acquisition panel ---
 
     def _build_sweep_panel(self):
         panel = QFrame()
         panel.setObjectName("PanelContainer")
         panel.setAttribute(Qt.WA_StyledBackground, True)
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setContentsMargins(18, 16, 18, 18)
         layout.setSpacing(0)
 
-        title_lbl = QLabel("SWEEP SETUP")
+        title_lbl = QLabel("DIT PARAMETERS")
         title_lbl.setObjectName("PanelTitle")
         title_lbl.setStyleSheet("padding-bottom: 8px;")
         layout.addWidget(title_lbl)
@@ -88,71 +101,132 @@ class JVConfigPanel(Atom):
         divider.setFrameShape(QFrame.HLine)
         layout.addWidget(divider)
 
-        self._v0 = PlainDoubleField()
-        self._v0.setRange(-5, 5)
-        self._v0.setDecimals(2)
-        self._v0.setValue(-0.2)
+        def make_group_title(text):
+            lbl = QLabel(text)
+            lbl.setObjectName("AccentLabel")
+            lbl.setStyleSheet("padding-top: 12px; padding-bottom: 4px;")
+            return lbl
 
+        def make_field(label_text, widget):
+            """Label-above-field block, for a 2-per-row grid -- far more
+            vertically compact than one full-width row per field."""
+            block = QWidget()
+            block.setObjectName("FieldBlock")
+            block_layout = QVBoxLayout(block)
+            block_layout.setContentsMargins(0, 0, 0, 0)
+            block_layout.setSpacing(3)
+            lbl = QLabel(label_text)
+            lbl.setObjectName("FieldLabel")
+            block_layout.addWidget(lbl)
+            block_layout.addWidget(widget)
+            return block
+
+        def make_grid():
+            grid = QGridLayout()
+            grid.setHorizontalSpacing(14)
+            grid.setVerticalSpacing(10)
+            grid.setColumnStretch(0, 1)
+            grid.setColumnStretch(1, 1)
+            return grid
+
+        # --- Voltage step group ---
         self._v1 = PlainDoubleField()
         self._v1.setRange(-5, 5)
-        self._v1.setDecimals(2)
-        self._v1.setValue(1.3)
+        self._v1.setDecimals(3)
+        self._v1.setValue(0.0)
 
-        self._points = PlainIntField()
-        self._points.setRange(2, 2000)
-        self._points.setValue(100)
+        self._v2 = PlainDoubleField()
+        self._v2.setRange(-5, 5)
+        self._v2.setDecimals(3)
+        self._v2.setValue(0.8)
 
-        self._dir = NoWheelComboBox()
-        self._dir.addItems(["Forward", "Reverse"])
-        self._dir.setCurrentText("Reverse")
+        self._hold1 = PlainDoubleField()
+        self._hold1.setRange(0.001, 3600)
+        self._hold1.setDecimals(3)
+        self._hold1.setValue(0.05)
 
-        self._loops = PlainIntField()
-        self._loops.setRange(1, 20)
-        self._loops.setValue(1)
+        self._hold2 = PlainDoubleField()
+        self._hold2.setRange(0.001, 3600)
+        self._hold2.setDecimals(3)
+        self._hold2.setValue(0.05)
 
-        self._point_delay = PlainDoubleField()
-        self._point_delay.setRange(0.001, 10)
-        self._point_delay.setDecimals(2)
-        self._point_delay.setValue(0.01)
+        self._repetitions = PlainIntField()
+        self._repetitions.setRange(1, 100)
+        self._repetitions.setValue(1)
 
-        self._compliance_ma = PlainDoubleField()
-        self._compliance_ma.setRange(0.001, 1000)
-        self._compliance_ma.setDecimals(0)
-        self._compliance_ma.setValue(KEITHLEY_DEFAULT_COMPLIANCE_A * 1000)
+        self._recovery = PlainDoubleField()
+        self._recovery.setRange(0, 3600)
+        self._recovery.setDecimals(2)
+        self._recovery.setValue(1.0)
 
-        self._pin = PlainDoubleField()
-        self._pin.setRange(0.001, 5000)
-        self._pin.setDecimals(0)
-        self._pin.setValue(100.0)
+        layout.addWidget(make_group_title("VOLTAGE STEP"))
+        voltage_grid = make_grid()
+        voltage_grid.addWidget(make_field("V1 (V)", self._v1), 0, 0)
+        voltage_grid.addWidget(make_field("V2 (V)", self._v2), 0, 1)
+        voltage_grid.addWidget(make_field("Hold V1 (s)", self._hold1), 1, 0)
+        voltage_grid.addWidget(make_field("Hold V2 (s)", self._hold2), 1, 1)
+        voltage_grid.addWidget(make_field("Repetitions", self._repetitions), 2, 0)
+        voltage_grid.addWidget(make_field("Recovery (s)", self._recovery), 2, 1)
+        layout.addLayout(voltage_grid)
 
-        def make_row(label_text, widget):
-            row = QFrame()
-            row.setObjectName("FormRow")
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(0, 8, 0, 8)
+        # --- Acquisition group ---
+        self._trigger_delay = PlainDoubleField()
+        self._trigger_delay.setRange(0, 10000)
+        self._trigger_delay.setDecimals(3)
+        self._trigger_delay.setValue(1.0)
 
-            lbl = QLabel(label_text)
-            lbl.setObjectName("DimLabel")
+        self._integration = PlainDoubleField()
+        self._integration.setRange(0.01, 10000)
+        self._integration.setDecimals(3)
+        self._integration.setValue(1.0)
 
-            widget.setFixedWidth(140)
+        self._current_limit_ma = PlainDoubleField()
+        self._current_limit_ma.setRange(0.001, 1000)
+        self._current_limit_ma.setDecimals(0)
+        self._current_limit_ma.setValue(KEITHLEY_DEFAULT_COMPLIANCE_A * 1000)
 
-            row_layout.addWidget(lbl)
-            row_layout.addStretch(1)
-            row_layout.addWidget(widget)
-            return row
+        self._sense_range = NoWheelComboBox()
+        self._sense_range.addItems(_SENSE_RANGES)
 
-        layout.addWidget(make_row("Start Voltage (V)", self._v0))
-        layout.addWidget(make_row("Stop Voltage (V)", self._v1))
-        layout.addWidget(make_row("Step Count", self._points))
-        layout.addWidget(make_row("Direction", self._dir))
-        layout.addWidget(make_row("Loops", self._loops))
-        layout.addWidget(make_row("Point Delay (s)", self._point_delay))
-        layout.addWidget(make_row("Compliance (mA)", self._compliance_ma))
-        layout.addWidget(make_row("Irradiance (mW/cm\u00b2)", self._pin))
+        self._fudge = PlainDoubleField()
+        self._fudge.setRange(0, 1000)
+        self._fudge.setDecimals(3)
+        self._fudge.setValue(0.01)
+
+        self._chunk_points = PlainIntField()
+        self._chunk_points.setRange(10, 5000)
+        self._chunk_points.setValue(500)
+
+        layout.addWidget(make_group_title("ACQUISITION"))
+        acq_grid = make_grid()
+        acq_grid.addWidget(make_field("Trigger Delay (ms)", self._trigger_delay), 0, 0)
+        acq_grid.addWidget(make_field("Integration (ms)", self._integration), 0, 1)
+        acq_grid.addWidget(make_field("Current Limit (mA)", self._current_limit_ma), 1, 0)
+        acq_grid.addWidget(make_field("Sense Range", self._sense_range), 1, 1)
+        acq_grid.addWidget(make_field("Delay Fudge (ms)", self._fudge), 2, 0)
+        acq_grid.addWidget(make_field("Max Points/Chunk", self._chunk_points), 2, 1)
+        layout.addLayout(acq_grid)
+
+        self._four_wire = QCheckBox("4-wire (Kelvin) sensing")
+        self._four_wire.setChecked(True)
+
+        self._autozero = QCheckBox("Autozero")
+        self._autozero.setChecked(False)
+
+        self._log_plot = QCheckBox("Log-scale |I| plot")
+        self._log_plot.setChecked(False)
+
+        checkbox_grid = make_grid()
+        checkbox_grid.setVerticalSpacing(8)
+        checkbox_grid.addWidget(self._four_wire, 0, 0)
+        checkbox_grid.addWidget(self._autozero, 0, 1)
+        checkbox_grid.addWidget(self._log_plot, 1, 0)
+        layout.addSpacing(12)
+        layout.addLayout(checkbox_grid)
 
         layout.addStretch(1)
 
-        self._start_btn = QPushButton("INITIALIZE RUN")
+        self._start_btn = QPushButton("INITIALIZE DIT TRANSIENT")
         self._start_btn.setObjectName("PrimaryButton")
         self._start_btn.setMinimumHeight(44)
         self._start_btn.clicked.connect(self._on_run_clicked)
@@ -164,7 +238,7 @@ class JVConfigPanel(Atom):
     def _on_run_clicked(self):
         self.run_requested = True
 
-    # --- Substrate diagram ---
+    # --- Substrate diagram (shared widget) ---
 
     def _build_pixel_panel(self):
         panel = QFrame()
@@ -187,7 +261,7 @@ class JVConfigPanel(Atom):
     def _on_substrate_layout_changed(self, change):
         self.layout_changed = True
 
-    # --- Dataset card: relocated from the old header (Name/Browse) ---
+    # --- Dataset card ---
 
     def _build_dataset_card(self):
         card = QFrame()
@@ -220,7 +294,7 @@ class JVConfigPanel(Atom):
         self._autosave_table_checkbox.toggled.connect(self._on_autosave_table_toggled)
         layout.addWidget(self._autosave_table_checkbox)
 
-        self._autosave_curves_checkbox = QCheckBox("Autosave individual sweep data points")
+        self._autosave_curves_checkbox = QCheckBox("Autosave individual transient traces")
         self._autosave_curves_checkbox.setChecked(True)
         self._autosave_curves_checkbox.toggled.connect(self._on_autosave_curves_toggled)
         layout.addWidget(self._autosave_curves_checkbox)
@@ -251,33 +325,33 @@ class JVConfigPanel(Atom):
 
     # --- Public API for the controller ---
 
-    def refresh_layout(self, available_width=None):
-        """available_width is accepted-but-unused: kept for interface
-        compatibility"""
-        widget = self.get_widget()
-        if widget is not None:
-            widget.updateGeometry()
-
     def validate(self):
-        """Panel-local validation only (voltage range, pixel selection).
-        Instrument-connection validation is the controller's job."""
-        if self._v0.value() == self._v1.value():
-            return "ERROR: Start and Stop voltage cannot be the same."
+        if self._v1.value() == self._v2.value():
+            return "ERROR: V1 and V2 cannot be the same."
         if not self._substrate.has_active_pixel():
             return "ERROR: Please select at least one pixel."
         return None
 
-    def get_sweep_params(self):
+    def get_dit_params(self):
         return {
-            "v0": self._v0.value(),
             "v1": self._v1.value(),
-            "reverse": self._dir.currentText() == "Reverse",
-            "pin": self._pin.value(),
-            "compliance_a": self._compliance_ma.value() / 1000,
-            "point_delay_s": self._point_delay.value(),
-            "loops": self._loops.value(),
-            "points": self._points.value(),
+            "v2": self._v2.value(),
+            "hold1_s": self._hold1.value(),
+            "hold2_s": self._hold2.value(),
+            "trigger_delay_ms": self._trigger_delay.value(),
+            "integration_ms": self._integration.value(),
+            "current_limit_a": self._current_limit_ma.value() / 1000,
+            "sense_range": self._sense_range.currentText(),
+            "fudge_ms": self._fudge.value(),
+            "chunk_points": self._chunk_points.value(),
+            "four_wire": self._four_wire.isChecked(),
+            "autozero": self._autozero.isChecked(),
+            "repetitions": self._repetitions.value(),
+            "recovery_s": self._recovery.value(),
         }
+
+    def log_plot_enabled(self):
+        return self._log_plot.isChecked()
 
     def get_selected_pixels(self):
         return self._substrate.get_selected_pixels()
@@ -295,7 +369,7 @@ class JVConfigPanel(Atom):
     def flash_alert(self):
         """Brief red blink on the run button -- used when the user tries
         to start a run that will immediately fail (e.g. instruments not
-        connected)"""
+        connected), rather than a persistent color change."""
         self.set_start_button_alert(True)
         QTimer.singleShot(180, lambda: self.set_start_button_alert(False))
         QTimer.singleShot(360, lambda: self.set_start_button_alert(True))
