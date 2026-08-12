@@ -181,7 +181,7 @@ class MeasurementWorker(QThread):
 
                     # Check for short or open circuit faults before doing math
 
-                    fault = check_fault(I)
+                    fault = check_fault(I, compliance_a=p["compliance_a"], V=V)
                     if fault:
                         self.pixel_faulted.emit(pixel, area, fault, loop_idx + 1)
                         self.log.emit(f"Pixel {pixel} flagged as {fault}")

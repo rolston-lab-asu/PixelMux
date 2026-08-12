@@ -8,6 +8,15 @@ import time
 from PySide6.QtCore import QThread, Signal
 
 from core.dit_math import calculate_dit_metrics
+from core.pv_math import check_fault
+
+# DIT-specific OPEN floor. check_fault's shared default (1 uA) sits at the
+# top of the lowest current range Keithley documents for the 2460 (SPEC-2460
+# Rev. C: 1 uA range, 40 pA RMS noise, +-700 pA accuracy)
+# DIT's own sense-range selector goes down to a 100 nA fixed range specifically to 
+# resolve small transients, so the shared 1 uA floor would flag nearly that whole 
+# range as OPEN.
+DIT_OPEN_THRESHOLD_A = 5e-10  # 500 pA
 from instruments.keithley2460 import (
     keithley_output_safe,
     keithley_dit_voltage_step,
@@ -113,6 +122,17 @@ class DITWorker(QThread):
 
                 if self._abort:
                     break
+
+                # Fault check b/f any metrics math.
+                # SHORT is judged relative to this run's configured current
+                # limit
+                fault = check_fault(
+                    i, compliance_a=p["current_limit_a"], open_threshold_a=DIT_OPEN_THRESHOLD_A,
+                )
+                if fault:
+                    self.pixel_faulted.emit(pixel, area, fault, 1)
+                    self.log.emit(f"Pixel {pixel} flagged as {fault}")
+                    continue
 
                 metrics = calculate_dit_metrics(t, v, i)
 
