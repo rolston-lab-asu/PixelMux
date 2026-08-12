@@ -18,6 +18,7 @@ import numpy as np
 
 RAW_CURVES_SUBDIR = "raw_curves"
 MANIFEST_FILENAME = "session_summary.csv"
+MANIFEST_FILENAME_SPO = "session_summary_spo.csv"
 
 # Single source of truth for the "no name given" fallback.
 DEFAULT_SAMPLE_NAME = "solar_iv_data"
@@ -26,6 +27,20 @@ _MANIFEST_HEADER = [
     "timestamp", "sample_name", "loop", "pixel", "area_cm2",
     "Voc_V", "Jsc_mA_cm2", "FF", "PCE_percent", "Vmpp_V", "Jmp_mA_cm2", "Pmax_mW_cm2",
     "Rs_diode_eq_ohm", "Rsh_diode_eq_ohm", "Rs_derivative_ohm", "Rsh_derivative_ohm",
+    "raw_curve_file",
+]
+
+_MANIFEST_HEADER_SPO = [
+    "timestamp", "sample_name", "loop", "pixel", "area_cm2",
+    "hold_voltage_v", "duration_s", "final_power_mW_cm2", "mean_power_mW_cm2",
+    "raw_curve_file",
+]
+
+MANIFEST_FILENAME_DIT = "session_summary_dit.csv"
+
+_MANIFEST_HEADER_DIT = [
+    "timestamp", "sample_name", "pixel", "area_cm2",
+    "v1_v", "v2_v", "extracted_charge_C", "peak_abs_current_A", "baseline_current_A",
     "raw_curve_file",
 ]
 
@@ -64,13 +79,13 @@ class ResultsExporter:
     def manifest_path(self):
         return os.path.abspath(os.path.join(self.output_dir, MANIFEST_FILENAME))
 
-    def _unique_raw_curve_filename(self, pixel, loop, probe_disk=True):
-        """Overwrite naming: {name}_pixel_{p}_loop_{n}_JV.txt, and if
+    def _unique_raw_curve_filename(self, pixel, loop, probe_disk=True, suffix="JV"):
+        """Overwrite naming: {name}_pixel_{p}_loop_{n}_{suffix}.txt, and if
         that exact name already exists in raw_curves/, append _(001), _(002), ... 
         until a free name """
         basename = self._basename()
         pixel_part = self.safe_filename_part(str(pixel))
-        stem = f"{basename}_pixel_{pixel_part}_loop_{int(loop)}_JV"
+        stem = f"{basename}_pixel_{pixel_part}_loop_{int(loop)}_{suffix}"
 
         if not probe_disk:
             return f"{stem}.txt"
@@ -86,9 +101,9 @@ class ResultsExporter:
                 return candidate
             n += 1
 
-    def preview_txt_path(self, pixel, loop=1):
+    def preview_txt_path(self, pixel, loop=1, suffix="JV"):
         """Generates the same filename as save_pixel_now but w/o writing to disk."""
-        filename = self._unique_raw_curve_filename(pixel, loop, probe_disk=True)
+        filename = self._unique_raw_curve_filename(pixel, loop, probe_disk=True, suffix=suffix)
         return os.path.join(self.raw_curves_dir(create=False), filename)
 
     def save_curve_now(self, record):
@@ -140,9 +155,99 @@ class ResultsExporter:
                 curve_filename or "",
             ])
 
+    # --- SPO auto-save: same layout/conventions as JV above, own manifest
+    # file and "_SPO" filename suffix. ---
+
+    def manifest_path_spo(self):
+        return os.path.abspath(os.path.join(self.output_dir, MANIFEST_FILENAME_SPO))
+
+    def preview_txt_path_spo(self, pixel, loop=1):
+        return self.preview_txt_path(pixel, loop, suffix="SPO")
+
+    def save_curve_now_spo(self, record):
+        """SPO counterpart of save_curve_now(): writes time_s/power_density
+        instead of voltage_v/current_density."""
+        filename = self._unique_raw_curve_filename(record["pixel"], record["loop"], suffix="SPO")
+        curve_path = os.path.join(self.raw_curves_dir(), filename)
+
+        t = np.asarray(record["time_s"], dtype=float)
+        p = np.asarray(record["power_density_mw_cm2"], dtype=float)
+        with open(curve_path, "w") as f:
+            f.write("# time_s\tpower_density_mW_cm2\n")
+            for time_s, power_density in zip(t, p):
+                f.write(f"{time_s:.8g}\t{power_density:.8g}\n")
+
+        return curve_path, filename
+
+    def save_table_row_now_spo(self, record, curve_filename=None):
+        """SPO counterpart of save_table_row_now(): appends to its own
+        session_summary_spo.csv."""
+        manifest_path = self.manifest_path_spo()
+        write_header = not os.path.exists(manifest_path)
+        with open(manifest_path, "a", newline="") as f:
+            writer = csv.writer(f)
+            if write_header:
+                writer.writerow(_MANIFEST_HEADER_SPO)
+            writer.writerow([
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+                self.sample_name,
+                int(record["loop"]),
+                record["pixel"],
+                f"{record['area_cm2']:.8g}",
+                f"{record['hold_voltage_v']:.8g}",
+                f"{record['time_s'][-1] if record['time_s'] else float('nan'):.8g}",
+                f"{record['final_power_density_mw_cm2']:.8g}",
+                f"{record['mean_power_density_mw_cm2']:.8g}",
+                curve_filename or "",
+            ])
+
+    # --- DIT auto-save: same layout/conventions
+    # manifest file and "_DIT" filename suffix. ---
+
+    def manifest_path_dit(self):
+        return os.path.abspath(os.path.join(self.output_dir, MANIFEST_FILENAME_DIT))
+
+    def preview_txt_path_dit(self, pixel, loop=1):
+        return self.preview_txt_path(pixel, loop, suffix="DIT")
+
+    def save_curve_now_dit(self, record):
+        """DIT counterpart of save_curve_now(): writes time_s/voltage_v/current_a."""
+        filename = self._unique_raw_curve_filename(record["pixel"], record["loop"], suffix="DIT")
+        curve_path = os.path.join(self.raw_curves_dir(), filename)
+
+        t = np.asarray(record["time_s"], dtype=float)
+        v = np.asarray(record["voltage_v"], dtype=float)
+        i = np.asarray(record["current_a"], dtype=float)
+        with open(curve_path, "w") as f:
+            f.write("# time_s\tvoltage_v\tcurrent_a\n")
+            for time_s, voltage, current in zip(t, v, i):
+                f.write(f"{time_s:.8g}\t{voltage:.8g}\t{current:.8g}\n")
+
+        return curve_path, filename
+
+    def save_table_row_now_dit(self, record, curve_filename=None):
+        """DIT counterpart of save_table_row_now(): appends to its own
+        session_summary_dit.csv."""
+        manifest_path = self.manifest_path_dit()
+        write_header = not os.path.exists(manifest_path)
+        with open(manifest_path, "a", newline="") as f:
+            writer = csv.writer(f)
+            if write_header:
+                writer.writerow(_MANIFEST_HEADER_DIT)
+            writer.writerow([
+                time.strftime("%Y-%m-%d %H:%M:%S"),
+                self.sample_name,
+                record["pixel"],
+                f"{record['area_cm2']:.8g}",
+                f"{record['v1_v']:.8g}",
+                f"{record['v2_v']:.8g}",
+                f"{record.get('extracted_charge_c', float('nan')):.8g}",
+                f"{record.get('peak_abs_current_a', float('nan')):.8g}",
+                f"{record.get('baseline_current_a', float('nan')):.8g}",
+                curve_filename or "",
+            ])
+
     # --- Manual batch export (Export .TXT / Export .CSV buttons) ---
-    # Unchanged: a separate, user-directed one-shot dump to a folder picked
-    # in that moment, not the ongoing auto-save layout above.
 
     def build_txt_path(self, row):
         """Curve file path for manual Export .TXT."""

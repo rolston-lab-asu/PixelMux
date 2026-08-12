@@ -1,27 +1,22 @@
 """
-One full JV sweep: validates inputs, starts/stops the
-MeasurementWorker, routes its signals into the plot/results panels, and
-handles the JV-specific exports (per-pixel TXT, results table, PNG, CSV).
+DIT pass: validates inputs, starts/stops the DITWorker, routes
+its signals into the plot/results panels, and handles the DIT-specific
+exports (per-pixel TXT, results table, PNG, CSV).
 """
 import os
 import time
 
 import numpy as np
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QFileDialog
 
-from controllers.jv_worker import MeasurementWorker
+from controllers.dit_worker import DITWorker
 from core.sweep_state import SweepState
 from core.exporter import DEFAULT_SAMPLE_NAME
-from gui.formatting import format_metric
-
-_METRIC_KEYS = (
-    "Voc", "Jsc", "Vmpp", "Jmpp", "Pmax", "FF", "PCE",
-    "Rs_diode_eq", "Rsh_diode_eq", "Rs_derivative", "Rsh_derivative",
-)
+from gui.formatting import format_si
 
 
-class JVController(QObject):
+class DITController(QObject):
 
     def __init__(
         self,
@@ -64,18 +59,15 @@ class JVController(QObject):
         self.results_panel.observe("delete_selected_requested", lambda change: self.delete_selected_rows())
         self.results_panel.observe("clear_table_requested", lambda change: self.clear_results_table())
 
-        # Dataset card (Name/Auto-Save/pixel-selection) drives the live
-        # path-preview strip.
         self.config_panel.observe("name_changed", self._update_path_preview)
         self.config_panel.observe("autosave_table_toggled", self._update_path_preview)
         self.config_panel.observe("autosave_curves_toggled", self._update_path_preview)
         self.config_panel.observe("layout_changed", self._update_path_preview)
 
-        # Nothing to export yet at startup.
         self.results_panel.set_export_enabled(False)
         self._update_path_preview()
 
-    # --- Sweep lifecycle ---
+    # --- Transient lifecycle ---
 
     def validate(self):
         if not self.inst.keithley:
@@ -106,7 +98,7 @@ class JVController(QObject):
             return
 
         if self.worker is not None and self.worker.isRunning():
-            self.log("ERROR: a sweep is already running")
+            self.log("ERROR: a DIT transient is already running")
             return
 
         selected = self.config_panel.get_selected_pixels()
@@ -115,15 +107,14 @@ class JVController(QObject):
             return
 
         self.plot_panel.reset_for_new_run()
+        self.plot_panel.set_log_y(self.config_panel.log_plot_enabled())
 
-        sweep_params = self.config_panel.get_sweep_params()
-        self.plot_panel.prepare_legends(selected, sweep_params["loops"])
+        dit_params = self.config_panel.get_dit_params()
+        self.plot_panel.prepare_legends(selected, 1)
         self._set_running(True)
 
         # Pass the active hardware connections to the background thread.
-        # To prevent connection conflicts and crashes, do not command or
-        # query the instruments from this GUI thread while the sweep runs.
-        self.worker = MeasurementWorker(self.inst.keithley, self.inst.relay, selected, sweep_params)
+        self.worker = DITWorker(self.inst.keithley, self.inst.relay, selected, dit_params)
         self.worker.log.connect(self._on_log)
         self.worker.pixel_started.connect(self._on_pixel_started)
         self.worker.pixel_result.connect(self._on_pixel_result)
@@ -156,23 +147,26 @@ class JVController(QObject):
     def _on_pixel_result(self, record):
         self.results.append(record)
         self.state.results.append(record)
-        V = np.asarray(record["voltage_v"], dtype=float)
-        J = np.asarray(record["current_density_ma_cm2"], dtype=float)
-        self.plot_panel.plot_curve(V, J, record["channel"], record["loop"])
 
-        metrics = {k: record[k] for k in _METRIC_KEYS}
+        t = np.asarray(record["time_s"], dtype=float)
+        current = np.asarray(record["current_a"], dtype=float)
+        y = np.abs(current) if self.config_panel.log_plot_enabled() else current
+        self.plot_panel.plot_curve(t, y, record["channel"], record["loop"])
+
+        charge = record.get("extracted_charge_c")
+        peak_current = record.get("peak_abs_current_a")
+        status = "OK" if charge is not None else "NO TRANSITION"
         self.results_panel.add_result_row(
-            record["pixel"], record["area_cm2"], metrics, "OK", record["loop"],
-            row_token=id(record),
+            record["pixel"], record["area_cm2"], record["v1_v"], record["v2_v"],
+            charge, peak_current, status, row_token=id(record),
         )
 
         self.plot_panel.set_active_pixel(record["pixel"])
         self.plot_panel.set_hud_metrics(
-            format_metric(metrics["Voc"], 3),
-            format_metric(metrics["Jsc"], 2),
-            format_metric(metrics["PCE"], 2),
-            format_metric(metrics["FF"], 2),
+            format_si(charge, "C"),
+            format_si(peak_current, "A"),
         )
+
         # Incremental auto-save & write THIS pixel's result immediately.
         saved_curve = False
         saved_table = False
@@ -181,7 +175,7 @@ class JVController(QObject):
         if self.config_panel.autosave_curves_enabled():
             self.exporter.sample_name = self.get_sample_name() or DEFAULT_SAMPLE_NAME
             try:
-                _curve_path, curve_filename = self.exporter.save_curve_now(record)
+                _curve_path, curve_filename = self.exporter.save_curve_now_dit(record)
                 saved_curve = True
             except Exception as e:
                 self.log(f"ERROR: could not auto-save curve for pixel {record['pixel']}: {e}")
@@ -189,17 +183,17 @@ class JVController(QObject):
         if self.config_panel.autosave_table_enabled():
             self.exporter.sample_name = self.get_sample_name() or DEFAULT_SAMPLE_NAME
             try:
-                self.exporter.save_table_row_now(record, curve_filename)
+                self.exporter.save_table_row_now_dit(record, curve_filename)
                 saved_table = True
             except Exception as e:
                 self.log(f"ERROR: could not auto-save table row for pixel {record['pixel']}: {e}")
 
         if saved_curve and saved_table:
-            self.log(f"OK: Auto-saved pixel {record['pixel']} (loop {record['loop']})")
+            self.log(f"OK: Auto-saved pixel {record['pixel']}")
         elif saved_curve:
-            self.log(f"OK: Auto-saved curve for pixel {record['pixel']} (loop {record['loop']})")
+            self.log(f"OK: Auto-saved curve for pixel {record['pixel']}")
         elif saved_table:
-            self.log(f"OK: Auto-saved table row for pixel {record['pixel']} (loop {record['loop']})")
+            self.log(f"OK: Auto-saved table row for pixel {record['pixel']}")
 
         self._update_path_preview()
 
@@ -207,7 +201,7 @@ class JVController(QObject):
         fault_entry = {"pixel": pixel, "area": area, "fault": fault, "loop": loop_number}
         self.state.faults.append(fault_entry)
         self.results_panel.add_result_row(
-            pixel, area, None, fault, loop_number, row_token=id(fault_entry),
+            pixel, area, None, None, None, None, fault, row_token=id(fault_entry),
         )
 
     def _on_sweep_finished(self, aborted, had_error):
@@ -219,21 +213,19 @@ class JVController(QObject):
         self._set_running(False)
 
         if aborted:
-            self.log("Sweep aborted")
+            self.log("DIT aborted")
         elif had_error:
-            self.log("Sweep ended with an error")
+            self.log("DIT ended with an error")
         else:
-            self.log("Sweep complete")
+            self.log("DIT complete")
 
-        # Auto-saving after every completed run with results is preserved,
-        # gated behind the Enable Auto-Save checkbox.
         if self.results:
             table_on = self.config_panel.autosave_table_enabled()
             curves_on = self.config_panel.autosave_curves_enabled()
             if table_on and curves_on:
                 self.log(
                     f"Auto-save complete: {len(self.results)} pixel result(s) "
-                    f"written to {self.exporter.manifest_path()}"
+                    f"written to {self.exporter.manifest_path_dit()}"
                 )
             elif curves_on:
                 self.log(
@@ -244,7 +236,7 @@ class JVController(QObject):
             elif table_on:
                 self.log(
                     f"Auto-save complete: {len(self.results)} row(s) written "
-                    f"to {self.exporter.manifest_path()} (curves not auto-saved)"
+                    f"to {self.exporter.manifest_path_dit()} (curves not auto-saved)"
                 )
             else:
                 self.log("Results kept in memory -- export from the Results tab when ready")
@@ -292,8 +284,6 @@ class JVController(QObject):
         self._update_path_preview()
 
     def _update_path_preview(self, change=None):
-        """Live preview of where the next auto-saved file will land, or a
-        warning telling the researcher they'll need to export manually."""
         panel = self.config_panel
         table_on = panel.autosave_table_enabled()
         curves_on = panel.autosave_curves_enabled()
@@ -301,8 +291,8 @@ class JVController(QObject):
         if not table_on and not curves_on:
             panel.set_path_preview(
                 "\u26A0\uFE0F Auto-save disabled. Use the \"Results\" tab to "
-                "manually export raw curves (.txt) and results table (.csv) "
-                "once the sweep completes.",
+                "manually export raw traces (.txt) and results table (.csv) "
+                "once the run completes.",
                 is_warning=True,
             )
             return
@@ -320,15 +310,15 @@ class JVController(QObject):
         self.exporter.sample_name = panel.sample_name() or DEFAULT_SAMPLE_NAME
 
         if table_on and curves_on:
-            path = self.exporter.preview_txt_path(pixel)
+            path = self.exporter.preview_txt_path_dit(pixel)
             panel.set_path_preview(f"Auto-saving to: {path}", is_warning=False)
         elif curves_on:
-            path = self.exporter.preview_txt_path(pixel)
+            path = self.exporter.preview_txt_path_dit(pixel)
             panel.set_path_preview(
                 f"Auto-saving curve to: {path} (table not auto-saved)", is_warning=False,
             )
         else:
-            path = self.exporter.manifest_path()
+            path = self.exporter.manifest_path_dit()
             panel.set_path_preview(
                 f"Auto-saving table row to: {path} (curves not auto-saved)", is_warning=False,
             )
@@ -350,7 +340,12 @@ class JVController(QObject):
                 return  # user cancelled
             self.exporter.output_dir = chosen_dir
 
-        self.exporter.save_results(self.results, auto=auto)
+        try:
+            for record in self.results:
+                self.exporter.save_curve_now_dit(record)
+            self.log(f"Saved {len(self.results)} DIT text file(s) to {self.exporter.raw_curves_dir(create=False)}")
+        except Exception as e:
+            self.log(f"ERROR: could not save TXT files: {e}")
 
     def export_plot_png(self):
         try:
@@ -360,10 +355,10 @@ class JVController(QObject):
             folder = os.path.abspath(self.exporter.output_dir)
             timestamp = time.strftime("%H%M%S")
             basename = self.exporter._basename()
-            suggested_path = os.path.join(folder, f"{basename}_ivcurve_{timestamp}.png")
+            suggested_path = os.path.join(folder, f"{basename}_dit_{timestamp}.png")
 
             path, _ = QFileDialog.getSaveFileName(
-                self.parent_widget, "Export IV Curve Image", suggested_path, "PNG Image (*.png)"
+                self.parent_widget, "Export DIT Transient Image", suggested_path, "PNG Image (*.png)"
             )
             if not path:
                 return  # user cancelled
@@ -387,7 +382,7 @@ class JVController(QObject):
             folder = os.path.abspath(self.exporter.output_dir)
             timestamp = time.strftime("%H%M%S")
             basename = self.exporter._basename()
-            suggested_path = os.path.join(folder, f"{basename}_results_{timestamp}.csv")
+            suggested_path = os.path.join(folder, f"{basename}_dit_results_{timestamp}.csv")
 
             path, _ = QFileDialog.getSaveFileName(
                 self.parent_widget, "Export Results CSV", suggested_path, "CSV File (*.csv)"

@@ -1,6 +1,6 @@
 """
-JV "CONFIG" tab: sweep-parameter form on the left, substrate diagram +
-dataset card on the right. Owns and validates its own inputs.
+SPO "CONFIG" tab: hold-parameter form on the left, substrate diagram +
+dataset card on the right.
 """
 from atom.api import Atom, Bool, Event, List, Typed
 from PySide6.QtCore import Qt, QTimer
@@ -10,12 +10,12 @@ from PySide6.QtWidgets import (
 )
 
 from instruments.keithley2460 import KEITHLEY_DEFAULT_COMPLIANCE_A
-from gui.custom_widgets import NoWheelComboBox, PlainIntField, PlainDoubleField
+from gui.custom_widgets import PlainIntField, PlainDoubleField
 from gui.common_panels.substrate_panel import SubstratePanel
 from gui.effects import make_panel_shadow, update_shadow_color
 
 
-class JVConfigPanel(Atom):
+class SPOConfigPanel(Atom):
     __slots__ = ('__weakref__',)
 
     is_dark_mode = Bool(False)
@@ -29,15 +29,12 @@ class JVConfigPanel(Atom):
 
     _widget = Typed(QWidget)
 
-    # Sweep-parameter inputs
-    _v0 = Typed(PlainDoubleField)
-    _v1 = Typed(PlainDoubleField)
-    _points = Typed(PlainIntField)
-    _dir = Typed(NoWheelComboBox)
+    # Hold-parameter inputs
+    _hold_v = Typed(PlainDoubleField)
+    _duration = Typed(PlainDoubleField)
+    _interval = Typed(PlainDoubleField)
     _loops = Typed(PlainIntField)
-    _point_delay = Typed(PlainDoubleField)
     _compliance_ma = Typed(PlainDoubleField)
-    _pin = Typed(PlainDoubleField)
     _start_btn = Typed(QPushButton)
 
     _top_layout = Typed(QHBoxLayout)
@@ -68,7 +65,7 @@ class JVConfigPanel(Atom):
         self._widget = container
         return container
 
-    # --- Sweep panel ---
+    # --- Hold-parameter panel ---
 
     def _build_sweep_panel(self):
         panel = QFrame()
@@ -78,7 +75,7 @@ class JVConfigPanel(Atom):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(0)
 
-        title_lbl = QLabel("SWEEP SETUP")
+        title_lbl = QLabel("SPO PARAMETERS")
         title_lbl.setObjectName("PanelTitle")
         title_lbl.setStyleSheet("padding-bottom: 8px;")
         layout.addWidget(title_lbl)
@@ -88,42 +85,29 @@ class JVConfigPanel(Atom):
         divider.setFrameShape(QFrame.HLine)
         layout.addWidget(divider)
 
-        self._v0 = PlainDoubleField()
-        self._v0.setRange(-5, 5)
-        self._v0.setDecimals(2)
-        self._v0.setValue(-0.2)
+        self._hold_v = PlainDoubleField()
+        self._hold_v.setRange(-5, 5)
+        self._hold_v.setDecimals(2)
+        self._hold_v.setValue(0.80)
 
-        self._v1 = PlainDoubleField()
-        self._v1.setRange(-5, 5)
-        self._v1.setDecimals(2)
-        self._v1.setValue(1.3)
+        self._duration = PlainDoubleField()
+        self._duration.setRange(1, 36000)
+        self._duration.setDecimals(0)
+        self._duration.setValue(120)
 
-        self._points = PlainIntField()
-        self._points.setRange(2, 2000)
-        self._points.setValue(100)
-
-        self._dir = NoWheelComboBox()
-        self._dir.addItems(["Forward", "Reverse"])
-        self._dir.setCurrentText("Reverse")
+        self._interval = PlainDoubleField()
+        self._interval.setRange(0.1, 3600)
+        self._interval.setDecimals(1)
+        self._interval.setValue(1.0)
 
         self._loops = PlainIntField()
         self._loops.setRange(1, 20)
         self._loops.setValue(1)
 
-        self._point_delay = PlainDoubleField()
-        self._point_delay.setRange(0.001, 10)
-        self._point_delay.setDecimals(2)
-        self._point_delay.setValue(0.01)
-
         self._compliance_ma = PlainDoubleField()
         self._compliance_ma.setRange(0.001, 1000)
         self._compliance_ma.setDecimals(0)
         self._compliance_ma.setValue(KEITHLEY_DEFAULT_COMPLIANCE_A * 1000)
-
-        self._pin = PlainDoubleField()
-        self._pin.setRange(0.001, 5000)
-        self._pin.setDecimals(0)
-        self._pin.setValue(100.0)
 
         def make_row(label_text, widget):
             row = QFrame()
@@ -141,18 +125,15 @@ class JVConfigPanel(Atom):
             row_layout.addWidget(widget)
             return row
 
-        layout.addWidget(make_row("Start Voltage (V)", self._v0))
-        layout.addWidget(make_row("Stop Voltage (V)", self._v1))
-        layout.addWidget(make_row("Step Count", self._points))
-        layout.addWidget(make_row("Direction", self._dir))
+        layout.addWidget(make_row("Hold V (V)", self._hold_v))
+        layout.addWidget(make_row("Duration (s)", self._duration))
+        layout.addWidget(make_row("Interval (s)", self._interval))
         layout.addWidget(make_row("Loops", self._loops))
-        layout.addWidget(make_row("Point Delay (s)", self._point_delay))
         layout.addWidget(make_row("Compliance (mA)", self._compliance_ma))
-        layout.addWidget(make_row("Irradiance (mW/cm\u00b2)", self._pin))
 
         layout.addStretch(1)
 
-        self._start_btn = QPushButton("INITIALIZE RUN")
+        self._start_btn = QPushButton("INITIALIZE SPO HOLD")
         self._start_btn.setObjectName("PrimaryButton")
         self._start_btn.setMinimumHeight(44)
         self._start_btn.clicked.connect(self._on_run_clicked)
@@ -164,7 +145,7 @@ class JVConfigPanel(Atom):
     def _on_run_clicked(self):
         self.run_requested = True
 
-    # --- Substrate diagram ---
+    # --- Substrate diagram (shared widget) ---
 
     def _build_pixel_panel(self):
         panel = QFrame()
@@ -187,7 +168,7 @@ class JVConfigPanel(Atom):
     def _on_substrate_layout_changed(self, change):
         self.layout_changed = True
 
-    # --- Dataset card: relocated from the old header (Name/Browse) ---
+    # --- Dataset card ---
 
     def _build_dataset_card(self):
         card = QFrame()
@@ -220,7 +201,7 @@ class JVConfigPanel(Atom):
         self._autosave_table_checkbox.toggled.connect(self._on_autosave_table_toggled)
         layout.addWidget(self._autosave_table_checkbox)
 
-        self._autosave_curves_checkbox = QCheckBox("Autosave individual sweep data points")
+        self._autosave_curves_checkbox = QCheckBox("Autosave individual time-series data points")
         self._autosave_curves_checkbox.setChecked(True)
         self._autosave_curves_checkbox.toggled.connect(self._on_autosave_curves_toggled)
         layout.addWidget(self._autosave_curves_checkbox)
@@ -252,31 +233,22 @@ class JVConfigPanel(Atom):
     # --- Public API for the controller ---
 
     def refresh_layout(self, available_width=None):
-        """available_width is accepted-but-unused: kept for interface
-        compatibility"""
         widget = self.get_widget()
         if widget is not None:
             widget.updateGeometry()
 
     def validate(self):
-        """Panel-local validation only (voltage range, pixel selection).
-        Instrument-connection validation is the controller's job."""
-        if self._v0.value() == self._v1.value():
-            return "ERROR: Start and Stop voltage cannot be the same."
         if not self._substrate.has_active_pixel():
             return "ERROR: Please select at least one pixel."
         return None
 
-    def get_sweep_params(self):
+    def get_spo_params(self):
         return {
-            "v0": self._v0.value(),
-            "v1": self._v1.value(),
-            "reverse": self._dir.currentText() == "Reverse",
-            "pin": self._pin.value(),
+            "hold_v": self._hold_v.value(),
+            "duration_s": self._duration.value(),
+            "interval_s": self._interval.value(),
             "compliance_a": self._compliance_ma.value() / 1000,
-            "point_delay_s": self._point_delay.value(),
             "loops": self._loops.value(),
-            "points": self._points.value(),
         }
 
     def get_selected_pixels(self):
@@ -295,7 +267,7 @@ class JVConfigPanel(Atom):
     def flash_alert(self):
         """Brief red blink on the run button -- used when the user tries
         to start a run that will immediately fail (e.g. instruments not
-        connected)"""
+        connected), rather than a persistent color change."""
         self.set_start_button_alert(True)
         QTimer.singleShot(180, lambda: self.set_start_button_alert(False))
         QTimer.singleShot(360, lambda: self.set_start_button_alert(True))

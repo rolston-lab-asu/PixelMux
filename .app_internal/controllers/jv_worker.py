@@ -14,6 +14,18 @@ import numpy as np
 from PySide6.QtCore import QThread, Signal
 
 from core.pv_math import full_iv_report, check_fault
+from core.pixel_map import (
+    PIXEL_LABELS,
+    PIXEL_TO_RELAY_CHANNEL,
+    DEFAULT_AREA_6_PIXEL_CM2,
+    DEFAULT_AREA_12_PIXEL_CM2,
+    DEFAULT_CUSTOM_AREA_CM2,
+    CUSTOM_PIXEL_MODE,
+    CUSTOM_PIXEL_LABEL,
+    active_pixel_labels,
+    default_pixel_area,
+    pixel_uses_relay,
+)
 from instruments.keithley2460 import (
     init_keithley,
     keithley_output_safe,
@@ -28,38 +40,6 @@ from instruments.numato_relay import (
     all_pixels_disconnect,
     connect_pixel,
 )
-
-PIXEL_LABELS = [chr(ord("A") + i) for i in range(12)]
-PIXEL_TO_RELAY_CHANNEL = {label: i for i, label in enumerate(PIXEL_LABELS)}
-
-DEFAULT_AREA_6_PIXEL_CM2 = 0.0396
-DEFAULT_AREA_12_PIXEL_CM2 = 0.108
-DEFAULT_CUSTOM_AREA_CM2 = 0.0396
-
-# "Custom" is a single, directly-wired pixel (no relay board)
-CUSTOM_PIXEL_MODE = "Custom"
-CUSTOM_PIXEL_LABEL = "A"
-
-
-def active_pixel_labels(pixel_mode_text):
-    if pixel_mode_text == CUSTOM_PIXEL_MODE:
-        return [CUSTOM_PIXEL_LABEL]
-    count = 6 if pixel_mode_text.startswith("6") else 12
-    return PIXEL_LABELS[:count]
-
-
-def default_pixel_area(pixel_mode_text):
-    if pixel_mode_text == CUSTOM_PIXEL_MODE:
-        return DEFAULT_CUSTOM_AREA_CM2
-    if pixel_mode_text.startswith("6"):
-        return DEFAULT_AREA_6_PIXEL_CM2
-    return DEFAULT_AREA_12_PIXEL_CM2
-
-
-def pixel_uses_relay(pixel_mode_text):
-    """Custom mode is wired straight to the Keithley, bypassing the relay
-    board entirely"""
-    return pixel_mode_text != CUSTOM_PIXEL_MODE
 
 
 class MeasurementWorker(QThread):
@@ -234,7 +214,7 @@ class MeasurementWorker(QThread):
             measurement_error = True
             self.log.emit(f"ERROR: measurement stopped: {e}")
         finally:
-            # --- GUARANTEED HARDWARE TEARDOWN ---
+            # --- HARDWARE TEARDOWN ---
             # Ensures relays and Keithley default back to off, even on crash or abort
             try:
                 keithley_output_safe(self.keithley)

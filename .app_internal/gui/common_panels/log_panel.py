@@ -2,10 +2,8 @@
 System event log panel. Owns the log text widget, the
 save-directory display, and its own TXT export/clear actions.
 
-This is a RawWidget wrapper around a plain PySide6 widget tree, not an
-enamldef given that log_message()/_retheme_log() do direct QTextCursor/
-QTextCharFormat manipulation to tag and recolor individual text runs by
-severity, which doesn't have a declarative-markup equivalent in Enaml.
+This is a RawWidget wrapper around a plain PySide6 widget tree
+given that log_message()/_retheme_log().
 """
 import os
 import time

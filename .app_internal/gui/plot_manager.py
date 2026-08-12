@@ -35,12 +35,20 @@ class PlotManager:
     and calls through this object for anything plot-related.
     """
 
-    def __init__(self, range_dialog_callback=None):
+    def __init__(self, range_dialog_callback=None,
+                 x_label="Voltage", x_units="V",
+                 y_label="Current Density", y_units="mA/cm\u00b2",
+                 default_x_range=(0, 1.3), default_y_range=(0, 26)):
         self.plot = pg.PlotWidget(viewBox=NoWheelViewBox(range_dialog_callback))
         self.plot.showGrid(x=True, y=True, alpha=0.22)
-        self.plot.setLabel("bottom", "Voltage", units="V")
-        self.plot.setLabel("left", "Current Density", units="mA/cm\u00b2")
+        self.plot.setLabel("bottom", x_label, units=x_units)
+        self.plot.setLabel("left", y_label, units=y_units)
         self.plot.setMinimumHeight(300)
+
+        self._x_label, self._x_units = x_label, x_units
+        self._y_label, self._y_units = y_label, y_units
+        self._default_x_range = default_x_range
+        self._default_y_range = default_y_range
 
         self.pixel_legend = None
         self.loop_legend = None
@@ -52,8 +60,13 @@ class PlotManager:
 
     def apply_default_range(self):
         self.plot.enableAutoRange(x=False, y=False)
-        self.plot.setXRange(0, 1.3, padding=0)
-        self.plot.setYRange(0, 26, padding=0)
+        self.plot.setXRange(*self._default_x_range, padding=0)
+        self.plot.setYRange(*self._default_y_range, padding=0)
+
+    def enable_autorange(self):
+        """DIT-only: signal magnitude/timescale varies too much between
+        runs for a fixed default range to be useful, unlike JV/SPO."""
+        self.plot.enableAutoRange(x=True, y=True)
 
     def clear_curves(self):
         self.plot.clear()
@@ -152,10 +165,10 @@ class PlotManager:
         y_max.setDecimals(4)
         y_max.setValue(y_max_current)
 
-        form.addRow("Voltage min (V)", x_min)
-        form.addRow("Voltage max (V)", x_max)
-        form.addRow("J min (mA/cm\u00b2)", y_min)
-        form.addRow("J max (mA/cm\u00b2)", y_max)
+        form.addRow(f"{self._x_label} min ({self._x_units})", x_min)
+        form.addRow(f"{self._x_label} max ({self._x_units})", x_max)
+        form.addRow(f"{self._y_label} min ({self._y_units})", y_min)
+        form.addRow(f"{self._y_label} max ({self._y_units})", y_max)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept)

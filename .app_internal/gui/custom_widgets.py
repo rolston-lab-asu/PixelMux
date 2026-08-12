@@ -4,10 +4,21 @@ Small, generic PyQt/pyqtgraph widget overrides with no business logic.
 from PySide6.QtCore import Qt, QRectF, QSize, Signal
 from PySide6.QtGui import QTextDocument, QFont, QFontMetrics, QDoubleValidator, QIntValidator
 from PySide6.QtWidgets import (
-    QSpinBox, QDoubleSpinBox, QComboBox, QHeaderView, QStyle, QStyleOptionHeader,
+    QSpinBox, QDoubleSpinBox, QComboBox, QFrame, QHeaderView, QStyle, QStyleOptionHeader,
     QTabBar, QTabWidget, QAbstractSpinBox, QLineEdit,
 )
 import pyqtgraph as pg
+
+
+class ClickableFrame(QFrame):
+    """A QFrame that emits `clicked` on left-click, e.g. for card-style
+    buttons that need a richer internal layout than QPushButton allows."""
+    clicked = Signal()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
 
 
 class NoWheelSpinBox(QSpinBox):

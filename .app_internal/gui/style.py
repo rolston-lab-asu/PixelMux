@@ -112,6 +112,11 @@ def _build_theme(c):
         border: none;
     }}
     QPushButton#PrimaryButton:hover {{ background-color: {c['accent_hover']}; }}
+    QPushButton#PrimaryButton[alert="true"] {{
+        background-color: {c['error']};
+        color: white;
+    }}
+    QPushButton#PrimaryButton[alert="true"]:hover {{ background-color: #dc2626; }}
 
     QPushButton#DangerButton {{
         background-color: {c['error']};
@@ -132,6 +137,11 @@ def _build_theme(c):
         border: 1px solid {c['border']};
     }}
     QPushButton#ThemeButton:hover {{ background-color: {c['border']}; }}
+    QPushButton#ThemeButton[flashing="true"] {{
+        background-color: {c['error']};
+        border-color: {c['error']};
+    }}
+    QPushButton#ThemeButton[flashing="true"]:hover {{ background-color: #dc2626; }}
 
     QProgressBar {{
         border-radius: 4px;
@@ -218,6 +228,11 @@ def _build_theme(c):
     QLabel#DimLabel {{
         color: {c['text_dim']};
         font-weight: 600;
+    }}
+    QLabel#FieldLabel {{
+        color: {c['text_dim']};
+        font-weight: 600;
+        font-size: 8pt;
     }}
     QLabel#MainLabel {{
         color: {c['text_main']};
@@ -354,7 +369,45 @@ def _build_theme(c):
         border-radius: 8px;
     }}
 
+    /* --- Home Screen: workflow module cards --- */
+    QFrame#HomeCard {{
+        border-radius: 10px;
+        border: 1px solid {c['border']};
+        border-left: 4px solid {c['text_dim']};
+        background-color: {c['bg_panel']};
+    }}
+    QFrame#HomeCard[category="jv"]  {{ border-left: 4px solid {c['accent']}; }}
+    QFrame#HomeCard[category="spo"] {{ border-left: 4px solid {c['success']}; }}
+    QFrame#HomeCard[category="dit"] {{ border-left: 4px solid {c['warning']}; }}
+    QFrame#HomeCard[state="enabled"]:hover {{ border-color: {c['accent']}; }}
+
+    QLabel#CardTag {{
+        font-size: 7.5pt;
+        font-weight: 800;
+        letter-spacing: 1px;
+        color: {c['text_dim']};
+    }}
+    QLabel#CardTag[category="jv"]  {{ color: {c['accent']}; }}
+    QLabel#CardTag[category="spo"] {{ color: {c['success']}; }}
+    QLabel#CardTag[category="dit"] {{ color: {c['warning']}; }}
+
+    QLabel#CardTitle {{
+        font-size: 13px;
+        font-weight: 800;
+        color: {c['text_main']};
+    }}
+    QLabel#CardDesc {{
+        font-size: 8.5pt;
+        color: {c['text_dim']};
+    }}
+
     /* --- Substrate diagram --- */
+    QWidget#SubstrateRoot {{
+        background: transparent;
+    }}
+    QWidget#FieldBlock {{
+        background: transparent;
+    }}
     QFrame#GlassSlide {{
         background-color: {c['glass']};
         border: 2px solid {c['glass_border']};
