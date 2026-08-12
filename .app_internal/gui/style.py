@@ -13,12 +13,16 @@ THEME_COLORS = {
         "success": "#10b981",
         "error": "#ef4444",
         "warning": "#f59e0b",
+        "warning_bg": "rgba(245, 158, 11, 0.08)",
         "text_main": "#1f2933",
         "text_dim": "#64748b",
         "border": "#cbd5e1",
         "row_hover": "rgba(0, 0, 0, 0.03)",
         "alt_row": "#eef2f6",
         "card_bg": "#eef1f5",
+        "glass": "rgba(0, 0, 0, 0.03)",
+        "glass_border": "rgba(0, 0, 0, 0.15)",
+        "accent_glow": "rgba(2, 132, 199, 0.15)",
     },
     True: {  # Dark mode
         "bg_base": "#0b1120",
@@ -30,12 +34,16 @@ THEME_COLORS = {
         "success": "#10b981",
         "error": "#ef4444",
         "warning": "#f59e0b",
+        "warning_bg": "rgba(250, 204, 21, 0.06)",
         "text_main": "#f8fafc",
         "text_dim": "#94a3b8",
         "border": "#334155",
         "row_hover": "rgba(255, 255, 255, 0.03)",
         "alt_row": "#141c2e",
         "card_bg": "#0f172a",
+        "glass": "rgba(255, 255, 255, 0.04)",
+        "glass_border": "rgba(255, 255, 255, 0.15)",
+        "accent_glow": "rgba(56, 189, 248, 0.15)",
     },
 }
 
@@ -51,6 +59,8 @@ def _build_theme(c):
     QWidget {{
         background-color: {c['bg_base']};
         color: {c['text_main']};
+        font-family: 'Segoe UI';
+        font-size: 10pt;
     }}
 
     QTabWidget::pane {{ border: none; }}
@@ -186,7 +196,7 @@ def _build_theme(c):
     QLabel#BrandTitle {{
         color: {c['accent']};
         font-weight: 850;
-        font-size: 14pt;
+        font-size: 12pt;
         letter-spacing: 1px;
     }}
     QLabel#PanelTitle {{
@@ -283,13 +293,13 @@ def _build_theme(c):
     }}
     QLabel#MetricLabel {{
         color: {c['accent']};
-        font-size: 24px;
+        font-size: 20px;
         font-weight: bold;
         letter-spacing: 1px;
     }}
     QLabel#MetricValue {{
         color: {c['text_main']};
-        font-size: 40px;
+        font-size: 26px;
         font-weight: 800;
         letter-spacing: -0.5px;
     }}
@@ -321,6 +331,92 @@ def _build_theme(c):
     QCheckBox::indicator:checked {{
         background-color: {c['accent']};
         border-color: {c['accent']};
+    }}
+
+    /* --- Auto-save path preview (dataset card) --- */
+    QLabel#PathPreview {{
+        font-family: Consolas, monospace;
+        font-size: 8pt;
+        color: {c['text_dim']};
+        background-color: {c['bg_input']};
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid {c['border']};
+    }}
+    QLabel#PathPreview[state="warning"] {{
+        border-color: {c['warning']};
+        background-color: {c['warning_bg']};
+        color: {c['text_main']};
+    }}
+    QFrame#DatasetCard {{
+        background-color: {c['card_bg']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+    }}
+
+    /* --- Substrate diagram --- */
+    QFrame#GlassSlide {{
+        background-color: {c['glass']};
+        border: 2px solid {c['glass_border']};
+        border-radius: 8px;
+    }}
+    QWidget#PadColumn {{
+        background: transparent;
+        border: none;
+    }}
+    QPushButton#PadBtn {{
+        border: 2px dashed {c['border']};
+        background-color: {c['bg_panel']};
+        color: {c['text_dim']};
+        font-weight: bold;
+        font-size: 9.5pt;
+        border-radius: 5px;
+        padding: 0px;
+    }}
+    QPushButton#PadBtn[state="active"] {{
+        border-style: solid;
+        border-color: {c['text_dim']};
+        background-color: {c['card_bg']};
+        color: {c['text_main']};
+    }}
+    QPushButton#PadBtn[state="selected"] {{
+        border-style: solid;
+        border-color: {c['accent']};
+        color: {c['accent']};
+    }}
+    QFrame#Trace {{
+        background-color: {c['border']};
+    }}
+    QFrame#Trace[state="active"] {{
+        background-color: {c['accent']};
+    }}
+    QFrame#PixelPad {{
+        background-color: {c['border']};
+        border-radius: 1px;
+    }}
+    QFrame#PixelPad[state="active"] {{
+        background-color: {c['accent']};
+    }}
+    QFrame#InspectorBar {{
+        background-color: {c['card_bg']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+    }}
+    QLabel#InspectorTitle {{
+        font-size: 8pt;
+        font-weight: bold;
+        color: {c['accent']};
+    }}
+    QPushButton#CloseInspectorBtn {{
+        background: none;
+        border: none;
+        color: {c['text_dim']};
+        font-size: 10pt;
+        font-weight: bold;
+        padding: 0px 4px;
+    }}
+    QPushButton#CloseInspectorBtn:hover {{
+        color: {c['error']};
     }}
 
     /* --- Scrollbar Thinners --- */

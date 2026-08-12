@@ -6,8 +6,8 @@ right-click range dialog.
 This module only interacts with PyQt/pyqtgraph, only focusing on rendering
 curves.
 """
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDialog, QFormLayout, QDialogButtonBox
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QDialog, QFormLayout, QDialogButtonBox
 import pyqtgraph as pg
 
 from gui.custom_widgets import NoWheelViewBox, NoWheelDoubleSpinBox
@@ -37,15 +37,10 @@ class PlotManager:
 
     def __init__(self, range_dialog_callback=None):
         self.plot = pg.PlotWidget(viewBox=NoWheelViewBox(range_dialog_callback))
-        self.plot.setBackground("#ffffff")
         self.plot.showGrid(x=True, y=True, alpha=0.22)
         self.plot.setLabel("bottom", "Voltage", units="V")
         self.plot.setLabel("left", "Current Density", units="mA/cm\u00b2")
         self.plot.setMinimumHeight(300)
-        self.plot.getAxis("bottom").setPen(pg.mkPen("#52606d"))
-        self.plot.getAxis("left").setPen(pg.mkPen("#52606d"))
-        self.plot.getAxis("bottom").setTextPen(pg.mkPen("#334e68"))
-        self.plot.getAxis("left").setTextPen(pg.mkPen("#334e68"))
 
         self.pixel_legend = None
         self.loop_legend = None
@@ -167,7 +162,7 @@ class PlotManager:
         buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
 
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.Accepted:
             if x_max.value() <= x_min.value() or y_max.value() <= y_min.value():
                 log_callback("ERROR: plot range maximum must be greater than minimum")
                 return

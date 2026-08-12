@@ -5,9 +5,9 @@ controllers to process respective button presses.
 import os
 
 import pyqtgraph as pg
-from PyQt5.QtCore import Qt, QTimer, QEvent
-from PyQt5.QtGui import QFont, QColor
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, QProgressBar, QScrollArea
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont, QColor
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, QProgressBar, QScrollArea
 
 from core.instrument_manager import InstrumentManager
 from core.exporter import ResultsExporter
@@ -34,11 +34,13 @@ LOGS_TAB_INDEX = 3
 
 
 class MainWindow(QWidget):
-    def __init__(self):
+    def __init__(self, mock=False):
         super().__init__()
+
         self.is_dark_mode = False
         self._shadow_widgets = []
         self._theme_aware_panels = []  # anything with an apply_theme(colors, is_dark_mode) method
+        self.mock = mock
 
         self.setWindowTitle("Multiplex Solar Simulator - IV Characterization")
         self.resize(1440, 900)
@@ -46,13 +48,11 @@ class MainWindow(QWidget):
         self.setObjectName("Root")
 
         self.output_dir = get_data_dir()
-        self.instrument_manager = InstrumentManager()
+        self.instrument_manager = InstrumentManager(mock=mock)
 
         self.apply_style()
         self._build_ui()
         self._wire_controllers()
-
-        QTimer.singleShot(0, self._refresh_pixel_grid_layout)
 
     def apply_style(self):
         self.setFont(QFont("Segoe UI", 10))
@@ -65,10 +65,10 @@ class MainWindow(QWidget):
         main.setContentsMargins(14, 14, 14, 14)
         main.setSpacing(10)
 
-        self.header_panel = HeaderPanel(self.is_dark_mode)
+        self.header_panel = HeaderPanel(is_dark_mode=self.is_dark_mode)
         self._register_theme_aware(self.header_panel)
-        self.header_panel.theme_toggled.connect(self.toggle_theme)
-        main.addWidget(self.header_panel)
+        self.header_panel.observe("theme_toggled", self._on_theme_toggled)
+        main.addWidget(self.header_panel.create_widget(self))
 
         self.tabs = SizeAwareTabWidget()
         self.tabs.setTabBar(SafeTabBar(self.tabs))
@@ -83,28 +83,26 @@ class MainWindow(QWidget):
         scroll.setWidget(self.tabs)
         main.addWidget(scroll, 1)
 
-        scroll.viewport().installEventFilter(self)
-
         # TAB 1: CONFIG
-        self.jv_config_panel = JVConfigPanel(self.is_dark_mode)
+        self.jv_config_panel = JVConfigPanel(is_dark_mode=self.is_dark_mode)
         self._register_theme_aware(self.jv_config_panel)
-        self.jv_config_panel.layout_changed.connect(self._on_config_layout_changed)
-        self.tabs.addTab(self.jv_config_panel, "1. CONFIG")
+        self.tabs.addTab(self.jv_config_panel.create_widget(self.tabs), "1. CONFIG")
+        self.jv_config_panel.observe("layout_changed", self._on_config_layout_changed)
 
         # TAB 2: SWEEP
-        self.jv_plot_panel = JVPlotPanel(self.is_dark_mode)
+        self.jv_plot_panel = JVPlotPanel(is_dark_mode=self.is_dark_mode)
         self._register_theme_aware(self.jv_plot_panel)
-        self.tabs.addTab(self.jv_plot_panel, "2. SWEEP")
+        self.tabs.addTab(self.jv_plot_panel.create_widget(self.tabs), "2. SWEEP")
 
         # TAB 3: RESULTS
-        self.jv_results_panel = JVResultsPanel(self.is_dark_mode)
+        self.jv_results_panel = JVResultsPanel(is_dark_mode=self.is_dark_mode)
         self._register_theme_aware(self.jv_results_panel)
-        self.tabs.addTab(self.jv_results_panel, "3. RESULTS")
+        self.tabs.addTab(self.jv_results_panel.create_widget(self.tabs), "3. RESULTS")
 
         # TAB 4: LOGS
-        self.log_panel = LogPanel(self.output_dir, self.is_dark_mode)
+        self.log_panel = LogPanel(output_dir=self.output_dir, is_dark_mode=self.is_dark_mode)
         self._register_theme_aware(self.log_panel)
-        self.tabs.addTab(self.log_panel, "4. LOGS")
+        self.tabs.addTab(self.log_panel.create_widget(self.tabs), "4. LOGS")
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
 
@@ -165,21 +163,28 @@ class MainWindow(QWidget):
             plot_panel=self.jv_plot_panel,
             results_panel=self.jv_results_panel,
             log_fn=self.log_panel.log_message,
-            get_sample_name=self.header_panel.sample_name,
+            get_sample_name=self.jv_config_panel.sample_name,
             tabs=self.tabs,
             sweep_tab_index=SWEEP_TAB_INDEX,
             parent_widget=self,
         )
         self.main_controller.register_mode_controller(self.jv_controller)
 
+        # Browse is on the dataset card.
+        self.jv_config_panel.observe(
+            "browse_requested", lambda change: self.main_controller.choose_output_dir()
+        )
+
         # Cross-panel running state (start/abort/connect/browse all need
         # to agree on whether a sweep is in flight).
-        self.jv_controller.running_changed.connect(self._on_running_changed)
-        self.jv_controller.progress_changed.connect(self._on_progress_update)
+        self.jv_controller.state.observe("running", self._on_running_changed)
+        self.jv_controller.state.observe("progress_percent", self._on_progress_update)
+        self.jv_controller.state.observe("progress_text", self._on_progress_update)
 
     # --- Cross-cutting state broadcasts ---
 
-    def _on_running_changed(self, running):
+    def _on_running_changed(self, change):
+        running = change["value"]
         self.header_panel.set_running(running)
         self.footer.setVisible(running)
         if running:
@@ -187,7 +192,9 @@ class MainWindow(QWidget):
             self.progress_pct.setText("0%")
             self.progress_txt.setText("Initializing hardware...")
 
-    def _on_progress_update(self, percent, text):
+    def _on_progress_update(self, change):
+        state = self.jv_controller.state
+        percent, text = state.progress_percent, state.progress_text
         self.progress_bar.setValue(percent)
         self.progress_pct.setText(f"{percent}%")
         self.progress_txt.setText(text)
@@ -195,24 +202,16 @@ class MainWindow(QWidget):
     def _on_tab_changed(self, index):
         animate_tab_switch(self.tabs, index, anim_owner=self)
         self.tabs.updateGeometry()
-        self._refresh_pixel_grid_layout()
 
-    def eventFilter(self, obj, event):
-        if obj is self.scroll.viewport() and event.type() == QEvent.Resize:
-            self._refresh_pixel_grid_layout()
-        return super().eventFilter(obj, event)
-
-    def _refresh_pixel_grid_layout(self):
-        viewport_width = self.scroll.viewport().width()
-        if viewport_width > 0:
-            self.jv_config_panel.set_available_content_width(viewport_width)
-
-    def _on_config_layout_changed(self):
-        # The pixel grid rebuilt itself after a debounce delay, so 
+    def _on_config_layout_changed(self, change):
+        # The pixel grid rebuilt itself after a debounce delay, so
         # re-measure the tab widget/scroll area.
-        self.jv_config_panel.updateGeometry()
+        self.jv_config_panel.get_widget().updateGeometry()
         self.tabs.updateGeometry()
         self.scroll.updateGeometry()
+
+    def _on_theme_toggled(self, change):
+        self.toggle_theme()
 
     def toggle_theme(self):
         self.is_dark_mode = not self.is_dark_mode

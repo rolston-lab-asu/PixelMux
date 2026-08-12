@@ -2,12 +2,13 @@
 JV "RESULTS" tab: the extracted-metrics table and its Export .TXT / Export
 .CSV buttons.
 """
-import numpy as np
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QBrush, QColor
-from PyQt5.QtWidgets import (
+from atom.api import Atom, Bool, Event, List, Typed
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QBrush, QColor
+from PySide6.QtWidgets import (
     QWidget, QFrame, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QAbstractItemView, QHeaderView,
+    QMessageBox,
 )
 
 from gui.custom_widgets import RichTextHeaderView
@@ -27,17 +28,34 @@ _HEADERS = [
 ]
 
 
-class JVResultsPanel(QWidget):
-    export_txt_requested = pyqtSignal()
-    export_csv_requested = pyqtSignal()
+class JVResultsPanel(Atom):
+    __slots__ = ('__weakref__',)
 
-    def __init__(self, is_dark_mode=False, parent=None):
-        super().__init__(parent)
-        self.is_dark_mode = is_dark_mode
-        self._role_colored_items = []  # [(QTableWidgetItem, role), ...] for theme refresh
+    is_dark_mode = Bool(False)
 
-        layout = QVBoxLayout(self)
+    export_txt_requested = Event()
+    export_csv_requested = Event()
+    delete_selected_requested = Event()
+    clear_table_requested = Event()
+
+    _widget = Typed(QWidget)
+    _table = Typed(QTableWidget)
+    _export_txt_btn = Typed(QPushButton)
+    _export_csv_btn = Typed(QPushButton)
+    _delete_selected_btn = Typed(QPushButton)
+    _clear_table_btn = Typed(QPushButton)
+    _shadow = Typed(object)
+    _role_colored_items = List()  # [(QTableWidgetItem, role), ...] for theme refresh
+
+    def get_widget(self):
+        return self._widget
+
+    def create_widget(self, parent):
+        container = QWidget(parent)
+        layout = QVBoxLayout(container)
         layout.addWidget(self._build_results_panel())
+        self._widget = container
+        return container
 
     def _build_results_panel(self):
         panel = QFrame()
@@ -53,19 +71,28 @@ class JVResultsPanel(QWidget):
         header_row.addWidget(title_lbl)
         header_row.addStretch(1)
 
+        self._delete_selected_btn = QPushButton("Delete Selected")
+        self._delete_selected_btn.clicked.connect(self._on_delete_selected_clicked)
+        self._delete_selected_btn.setEnabled(False)
+        header_row.addWidget(self._delete_selected_btn)
+
+        self._clear_table_btn = QPushButton("Clear Table")
+        self._clear_table_btn.clicked.connect(self._on_clear_table_clicked)
+        header_row.addWidget(self._clear_table_btn)
+
         export_lbl = QLabel("MANUAL EXPORT:")
         export_lbl.setObjectName("DimLabel")
         header_row.addWidget(export_lbl)
 
-        self.export_txt_btn = QPushButton("Export .TXT")
-        self.export_txt_btn.clicked.connect(self.export_txt_requested.emit)
-        self.export_txt_btn.setEnabled(False)
-        header_row.addWidget(self.export_txt_btn)
+        self._export_txt_btn = QPushButton("Export .TXT")
+        self._export_txt_btn.clicked.connect(self._on_export_txt_clicked)
+        self._export_txt_btn.setEnabled(False)
+        header_row.addWidget(self._export_txt_btn)
 
-        self.export_csv_btn = QPushButton("Export .CSV")
-        self.export_csv_btn.clicked.connect(self.export_csv_requested.emit)
-        self.export_csv_btn.setEnabled(False)
-        header_row.addWidget(self.export_csv_btn)
+        self._export_csv_btn = QPushButton("Export .CSV")
+        self._export_csv_btn.clicked.connect(self._on_export_csv_clicked)
+        self._export_csv_btn.setEnabled(False)
+        header_row.addWidget(self._export_csv_btn)
 
         layout.addLayout(header_row)
 
@@ -80,40 +107,91 @@ class JVResultsPanel(QWidget):
         table_wrap_layout = QVBoxLayout(table_wrap)
         table_wrap_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.table = QTableWidget()
-        self.table.setObjectName("ResultsTable")
-        self.table.setFrameShape(QFrame.NoFrame)
-        self.table.setColumnCount(len(_HEADERS))
+        self._table = QTableWidget()
+        self._table.setObjectName("ResultsTable")
+        self._table.setFrameShape(QFrame.NoFrame)
+        self._table.setColumnCount(len(_HEADERS))
 
-        header = RichTextHeaderView(Qt.Horizontal, self.table)
-        self.table.setHorizontalHeader(header)
+        header = RichTextHeaderView(Qt.Horizontal, self._table)
+        self._table.setHorizontalHeader(header)
         header.set_text_color(get_theme_colors(self.is_dark_mode)["accent"])
 
-        self.table.setHorizontalHeaderLabels(_HEADERS)
-        self.table.setAlternatingRowColors(True)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.verticalHeader().setVisible(False)
-        self.table.verticalHeader().setDefaultSectionSize(24)
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
-        self.table.setMinimumHeight(260)
-        table_wrap_layout.addWidget(self.table)
+        self._table.setHorizontalHeaderLabels(_HEADERS)
+        self._table.setAlternatingRowColors(True)
+        self._table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
+
+        self._table.setSelectionMode(QAbstractItemView.MultiSelection)
+        self._table.itemSelectionChanged.connect(self._on_selection_changed)
+        self._table.verticalHeader().setVisible(False)
+        self._table.verticalHeader().setDefaultSectionSize(24)
+        self._table.horizontalHeader().setStretchLastSection(True)
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
+        self._table.setMinimumHeight(260)
+        table_wrap_layout.addWidget(self._table)
 
         layout.addWidget(table_wrap)
 
         self._shadow = make_panel_shadow(panel, self.is_dark_mode)
         return panel
 
+    def _on_export_txt_clicked(self):
+        self.export_txt_requested = True
+
+    def _on_export_csv_clicked(self):
+        self.export_csv_requested = True
+
+    def _on_selection_changed(self):
+        self._delete_selected_btn.setEnabled(bool(self._table.selectedIndexes()))
+
+    def _on_delete_selected_clicked(self):
+        self.delete_selected_requested = True
+
+    def _on_clear_table_clicked(self):
+        row_count = self._table.rowCount()
+        if row_count == 0:
+            return
+        reply = QMessageBox.question(
+            self._table,
+            "Clear Table",
+            f"Clear all {row_count} row(s) from the results table?\n"
+            "This can't be undone (already-autosaved files on disk are not affected).",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.clear_table_requested = True
+
     # --- Public API for the controller ---
 
     def clear(self):
-        self.table.setRowCount(0)
+        self._table.setRowCount(0)
         self._role_colored_items = []
+        self._delete_selected_btn.setEnabled(False)
 
-    def add_result_row(self, pixel, area, metrics, status, loop_idx=None):
-        r = self.table.rowCount()
-        self.table.insertRow(r)
+    def get_selected_row_tokens(self):
+        """Row tokens for every currently selected row, for the controller 
+        to map back to its own records."""
+        rows = sorted({index.row() for index in self._table.selectedIndexes()})
+        tokens = []
+        for r in rows:
+            item = self._table.item(r, 0)
+            if item is not None:
+                tokens.append(item.data(Qt.UserRole))
+        return tokens
+
+    def remove_rows_by_tokens(self, tokens):
+        """Removes rows whose row_token is in tokens."""
+        token_set = set(tokens)
+        for r in range(self._table.rowCount() - 1, -1, -1):
+            item = self._table.item(r, 0)
+            if item is not None and item.data(Qt.UserRole) in token_set:
+                self._table.removeRow(r)
+        self._delete_selected_btn.setEnabled(False)
+
+    def add_result_row(self, pixel, area, metrics, status, loop_idx=None, row_token=None):
+        r = self._table.rowCount()
+        self._table.insertRow(r)
 
         values = [
             f"L{loop_idx}" if loop_idx is not None else "--",
@@ -140,56 +218,61 @@ class JVResultsPanel(QWidget):
 
         values.append(status)
 
+        role_colored = list(self._role_colored_items)
         for col, value in enumerate(values):
             item = QTableWidgetItem(value)
+
+            if col == 0:
+                item.setData(Qt.UserRole, row_token)
 
             if col > 0:
                 item.setTextAlignment(Qt.AlignCenter)
 
             if col in _FIT_CELL_COLUMNS and value != "--":
-                self._apply_role_color(item, "warning")
+                self._apply_role_color(item, "warning", role_colored)
                 font = item.font()
                 font.setItalic(True)
                 font.setBold(True)
                 item.setFont(font)
 
-            if col == self.table.columnCount() - 1:
+            if col == self._table.columnCount() - 1:
                 # Status column: green for OK, red for any fault string
-                self._apply_role_color(item, "success" if value == "OK" else "error")
+                self._apply_role_color(item, "success" if value == "OK" else "error", role_colored)
                 font = item.font()
                 font.setBold(True)
                 item.setFont(font)
 
-            self.table.setItem(r, col, item)
+            self._table.setItem(r, col, item)
+        self._role_colored_items = role_colored
 
-    def _apply_role_color(self, item, role):
+    def _apply_role_color(self, item, role, role_colored):
         item.setForeground(QBrush(QColor(get_theme_colors(self.is_dark_mode)[role])))
-        self._role_colored_items.append((item, role))
+        role_colored.append((item, role))
 
     def get_export_data(self):
         """Returns (headers, rows) as plain strings, with rich-text markup
         stripped, ready for a CSV writer. Keeps the raw QTableWidget out of
         the controller's hands."""
         headers = []
-        for col in range(self.table.columnCount()):
-            header_item = self.table.horizontalHeaderItem(col)
+        for col in range(self._table.columnCount()):
+            header_item = self._table.horizontalHeaderItem(col)
             raw = header_item.text() if header_item else ""
             headers.append(raw.replace("<sub>", "").replace("</sub>", ""))
 
         rows = []
-        for r in range(self.table.rowCount()):
+        for r in range(self._table.rowCount()):
             rows.append([
-                self.table.item(r, c).text() if self.table.item(r, c) else ""
-                for c in range(self.table.columnCount())
+                self._table.item(r, c).text() if self._table.item(r, c) else ""
+                for c in range(self._table.columnCount())
             ])
         return headers, rows
 
     def has_rows(self):
-        return self.table.rowCount() > 0
+        return self._table.rowCount() > 0
 
     def set_export_enabled(self, enabled):
-        self.export_txt_btn.setEnabled(enabled)
-        self.export_csv_btn.setEnabled(enabled)
+        self._export_txt_btn.setEnabled(enabled)
+        self._export_csv_btn.setEnabled(enabled)
 
     def apply_theme(self, colors, is_dark_mode):
         self.is_dark_mode = is_dark_mode
@@ -198,6 +281,6 @@ class JVResultsPanel(QWidget):
         for item, role in self._role_colored_items:
             item.setForeground(QBrush(QColor(colors[role])))
 
-        header = self.table.horizontalHeader()
+        header = self._table.horizontalHeader()
         if isinstance(header, RichTextHeaderView):
             header.set_text_color(colors["accent"])
