@@ -11,8 +11,12 @@ THEME_COLORS = {
         "accent_hover": "#0369a1",
         "accent_text_on": "#ffffff",
         "success": "#10b981",
+        "success_hover": "#059669",
+        "success_text_on": "#ffffff",
         "error": "#ef4444",
         "warning": "#f59e0b",
+        "warning_hover": "#d97706",
+        "warning_text_on": "#1f2933",
         "warning_bg": "rgba(245, 158, 11, 0.08)",
         "text_main": "#1f2933",
         "text_dim": "#64748b",
@@ -32,8 +36,12 @@ THEME_COLORS = {
         "accent_hover": "#0284c7",
         "accent_text_on": "#0b1120",
         "success": "#10b981",
+        "success_hover": "#059669",
+        "success_text_on": "#0b1120",
         "error": "#ef4444",
         "warning": "#f59e0b",
+        "warning_hover": "#d97706",
+        "warning_text_on": "#0b1120",
         "warning_bg": "rgba(250, 204, 21, 0.06)",
         "text_main": "#f8fafc",
         "text_dim": "#94a3b8",
@@ -50,6 +58,17 @@ THEME_COLORS = {
 def get_theme_colors(dark_mode=False):
     """Returns the color-token dict for the active theme."""
     return THEME_COLORS[bool(dark_mode)]
+
+
+# Which theme-color token identifies each mode. JV keeps the app's default
+# accent. Temporary but functional
+MODE_ACCENT_KEYS = {"jv": "accent", "spo": "success", "dit": "warning"}
+
+
+def get_mode_accent(colors, mode):
+    """Returns the hex/rgba color string this mode should use in place of
+    the default accent, given a color-token dict from get_theme_colors()."""
+    return colors[MODE_ACCENT_KEYS.get(mode, "accent")]
 
 
 def _build_theme(c):
@@ -81,6 +100,20 @@ def _build_theme(c):
         color: {c['accent']};
         border-bottom: 3px solid {c['accent']};
         background: rgba(2, 132, 199, 0.08);
+    }}
+
+    /* Per-mode tab underline: SPO and DIT workspaces tag their own tab
+       strip with an objectName so the selected-tab color matches the
+       mode's identity color instead of the app-wide accent. */
+    QTabWidget#SPOTabs QTabBar::tab:selected {{
+        color: {c['success']};
+        border-bottom: 3px solid {c['success']};
+        background: rgba(16, 185, 129, 0.08);
+    }}
+    QTabWidget#DITTabs QTabBar::tab:selected {{
+        color: {c['warning']};
+        border-bottom: 3px solid {c['warning']};
+        background: rgba(245, 158, 11, 0.08);
     }}
 
     QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
@@ -244,6 +277,53 @@ def _build_theme(c):
         font-size: 15px;
     }}
 
+    /* Per-mode title/header color: SPO and DIT workspaces tag their tab
+       strip with an objectName so panel titles, table headers, sweep-tab
+       HUD/metric labels, etc. */
+    QTabWidget#SPOTabs QLabel#PanelTitle,
+    QTabWidget#SPOTabs QLabel#PanelTitleLarge,
+    QTabWidget#SPOTabs QLabel#AccentLabel,
+    QTabWidget#SPOTabs QLabel#HudActivePixel,
+    QTabWidget#SPOTabs QLabel#MetricLabel,
+    QTabWidget#SPOTabs QLabel#InspectorTitle,
+    QTabWidget#SPOTabs QHeaderView::section {{
+        color: {c['success']};
+    }}
+    QTabWidget#DITTabs QLabel#PanelTitle,
+    QTabWidget#DITTabs QLabel#PanelTitleLarge,
+    QTabWidget#DITTabs QLabel#AccentLabel,
+    QTabWidget#DITTabs QLabel#HudActivePixel,
+    QTabWidget#DITTabs QLabel#MetricLabel,
+    QTabWidget#DITTabs QLabel#InspectorTitle,
+    QTabWidget#DITTabs QHeaderView::section {{
+        color: {c['warning']};
+    }}
+    QTabWidget#SPOTabs QPushButton#PrimaryButton {{
+        background-color: {c['success']};
+        color: {c['success_text_on']};
+    }}
+    QTabWidget#SPOTabs QPushButton#PrimaryButton:hover {{
+        background-color: {c['success_hover']};
+    }}
+    QTabWidget#DITTabs QPushButton#PrimaryButton {{
+        background-color: {c['warning']};
+        color: {c['warning_text_on']};
+    }}
+    QTabWidget#DITTabs QPushButton#PrimaryButton:hover {{
+        background-color: {c['warning_hover']};
+    }}
+    /* Preserve the red validation-error flash (alert=true) regardless of
+       mode color, since it must win over the SPO/DIT overrides above. */
+    QTabWidget#SPOTabs QPushButton#PrimaryButton[alert="true"],
+    QTabWidget#DITTabs QPushButton#PrimaryButton[alert="true"] {{
+        background-color: {c['error']};
+        color: white;
+    }}
+    QTabWidget#SPOTabs QPushButton#PrimaryButton[alert="true"]:hover,
+    QTabWidget#DITTabs QPushButton#PrimaryButton[alert="true"]:hover {{
+        background-color: #dc2626;
+    }}
+
     /* Thin section divider, used under panel titles */
     QFrame#Divider {{
         border: none;
@@ -308,13 +388,13 @@ def _build_theme(c):
     }}
     QLabel#MetricLabel {{
         color: {c['accent']};
-        font-size: 20px;
+        font-size: 18px;
         font-weight: bold;
         letter-spacing: 1px;
     }}
     QLabel#MetricValue {{
         color: {c['text_main']};
-        font-size: 26px;
+        font-size: 24px;
         font-weight: 800;
         letter-spacing: -0.5px;
     }}

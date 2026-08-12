@@ -305,11 +305,55 @@ def extract_parameters(V, I, area_cm2, pin_mw_cm2=100):
     }
 
 
-def check_fault(I):
+SHORT_COMPLIANCE_FRACTION = 0.95
+LEGACY_SHORT_THRESHOLD_A = 0.95
+OPEN_THRESHOLD_A = 1e-6
+SHORT_CIRCUIT_WINDOW_V = 0.05
+
+
+def check_fault(I, compliance_a=None, V=None, open_threshold_a=OPEN_THRESHOLD_A):
+    """Flags a pixel as SHORT (railed at the source-meter's current limit)
+    or OPEN (essentially no current at all).
+
+    A shorted pixel rails at *whatever compliance is configured*, and 
+    compliance is user-settable per run. Pass `compliance_a` so SHORT is judged
+    relative to that limit; otherwise this falls back to the original fixed
+    threshold, which only ever fires if compliance happens to be set
+    near 1 A and misses real shorts at every normal setting.
+
+    Pass `V` (device voltage per sample) for swept measurements. A healthy
+    cell driven well past Voc goes into forward injection and
+    rails at compliance up there, so "touched compliance somewhere in the
+    sweep" is NOT a short.
+
+    `open_threshold_a` defaults to 1 uA. Per the Keithley 2460 datasheet
+    (SPEC-2460 Rev. C), that sits at the very top of the lowest current
+    range Keithley documents (1 uA, 40 pA RMS noise, +-700 pA accuracy) --
+    fine for JV/SPO, which don't rely on sub-uA measurement. DIT is
+    different since its own sense-range selector goes down to a 100 nA fixed
+    range specifically so small transients are resolvable, and 1 uA would
+    flag nearly that entire range as OPEN. DITWorker passes a lower
+    override for this reason.
+    """
     I = np.asarray(I, dtype=float)
-    if np.max(np.abs(I)) > 0.95:
+    peak = np.max(np.abs(I))
+
+    if compliance_a and compliance_a > 0:
+        rail = SHORT_COMPLIANCE_FRACTION * compliance_a
+        if V is not None:
+            V = np.asarray(V, dtype=float)
+            near_zero_bias = np.abs(V) <= SHORT_CIRCUIT_WINDOW_V
+            if np.any(near_zero_bias):
+                if np.all(np.abs(I[near_zero_bias]) >= rail):
+                    return "SHORT"
+            elif np.all(np.abs(I) >= rail):
+                return "SHORT"
+        elif np.all(np.abs(I) >= rail):
+            return "SHORT"
+    elif peak > LEGACY_SHORT_THRESHOLD_A:
         return "SHORT"
-    if np.max(np.abs(I)) < 1e-6:
+
+    if peak < open_threshold_a:
         return "OPEN"
     return None
 

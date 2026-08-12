@@ -4,15 +4,17 @@ dataset card on the right.
 """
 from atom.api import Atom, Bool, Event, List, Typed
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import (
     QWidget, QFrame, QHBoxLayout, QVBoxLayout, QLabel,
-    QCheckBox, QPushButton, QLineEdit, QLayout, QStyle,
+    QCheckBox, QPushButton, QLineEdit, QLayout, QStyle, QButtonGroup,
 )
 
 from instruments.keithley2460 import KEITHLEY_DEFAULT_COMPLIANCE_A
-from gui.custom_widgets import PlainIntField, PlainDoubleField
+from gui.custom_widgets import PlainIntField, PlainDoubleField, build_segmented_toggle, restyle_segmented_toggle
 from gui.common_panels.substrate_panel import SubstratePanel
 from gui.effects import make_panel_shadow, update_shadow_color
+from gui.style import get_theme_colors, get_mode_accent
 
 
 class SPOConfigPanel(Atom):
@@ -31,11 +33,28 @@ class SPOConfigPanel(Atom):
 
     # Hold-parameter inputs
     _hold_v = Typed(PlainDoubleField)
+    _hold_v_label = Typed(QLabel)
     _duration = Typed(PlainDoubleField)
     _interval = Typed(PlainDoubleField)
     _loops = Typed(PlainIntField)
+    _pin = Typed(PlainDoubleField)
     _compliance_ma = Typed(PlainDoubleField)
     _start_btn = Typed(QPushButton)
+
+    # MPP tracking (P&O) toggle + advanced params, shown only when tracking is ON
+    _mppt_off_btn = Typed(QPushButton)
+    _mppt_on_btn = Typed(QPushButton)
+    _mppt_group = Typed(QButtonGroup)
+    _mppt_hint = Typed(QLabel)
+    _step_mv = Typed(PlainDoubleField)
+    _min_step_mv = Typed(PlainDoubleField)
+    _v_ceiling = Typed(PlainDoubleField)
+    _settle_s = Typed(PlainDoubleField)
+    _step_row = Typed(QFrame)
+    _min_step_row = Typed(QFrame)
+    _ceiling_row = Typed(QFrame)
+    _settle_row = Typed(QFrame)
+    _toggle_pill = Typed(QFrame)
 
     _top_layout = Typed(QHBoxLayout)
     _sweep_panel = Typed(QFrame)
@@ -90,6 +109,26 @@ class SPOConfigPanel(Atom):
         self._hold_v.setDecimals(2)
         self._hold_v.setValue(0.80)
 
+        self._step_mv = PlainDoubleField()
+        self._step_mv.setRange(0.1, 500)
+        self._step_mv.setDecimals(1)
+        self._step_mv.setValue(10.0)
+
+        self._min_step_mv = PlainDoubleField()
+        self._min_step_mv.setRange(0.01, 100)
+        self._min_step_mv.setDecimals(2)
+        self._min_step_mv.setValue(1.0)
+
+        self._v_ceiling = PlainDoubleField()
+        self._v_ceiling.setRange(0, 5)
+        self._v_ceiling.setDecimals(2)
+        self._v_ceiling.setValue(1.50)
+
+        self._settle_s = PlainDoubleField()
+        self._settle_s.setRange(0.01, 3600)
+        self._settle_s.setDecimals(2)
+        self._settle_s.setValue(2.0)
+
         self._duration = PlainDoubleField()
         self._duration.setRange(1, 36000)
         self._duration.setDecimals(0)
@@ -103,6 +142,11 @@ class SPOConfigPanel(Atom):
         self._loops = PlainIntField()
         self._loops.setRange(1, 20)
         self._loops.setValue(1)
+
+        self._pin = PlainDoubleField()
+        self._pin.setRange(0.001, 5000)
+        self._pin.setDecimals(0)
+        self._pin.setValue(100.0)
 
         self._compliance_ma = PlainDoubleField()
         self._compliance_ma.setRange(0.001, 1000)
@@ -123,13 +167,51 @@ class SPOConfigPanel(Atom):
             row_layout.addWidget(lbl)
             row_layout.addStretch(1)
             row_layout.addWidget(widget)
-            return row
+            return row, lbl
 
-        layout.addWidget(make_row("Hold V (V)", self._hold_v))
-        layout.addWidget(make_row("Duration (s)", self._duration))
-        layout.addWidget(make_row("Interval (s)", self._interval))
-        layout.addWidget(make_row("Loops", self._loops))
-        layout.addWidget(make_row("Compliance (mA)", self._compliance_ma))
+        layout.addWidget(self._build_mppt_toggle_row())
+
+        self._mppt_hint = QLabel(
+            "Tracking starts here and adjusts automatically. Recommended: run a JV "
+            "sweep on this pixel first and set V Ceiling near its Voc."
+        )
+        self._mppt_hint.setObjectName("DimLabel")
+        self._mppt_hint.setStyleSheet("font-style: italic; font-size: 11px;")
+        self._mppt_hint.setWordWrap(True)
+        
+        metrics = QFontMetrics(self._mppt_hint.font())
+        wrap_width = 260  # matches this panel's typical inner content width
+        text_rect = metrics.boundingRect(
+            0, 0, wrap_width, 0, Qt.TextWordWrap, self._mppt_hint.text()
+        )
+        self._mppt_hint.setMinimumHeight(text_rect.height() + 4)
+        self._mppt_hint.setVisible(False)
+        layout.addWidget(self._mppt_hint)
+
+        hold_v_row, self._hold_v_label = make_row("Hold V (V)", self._hold_v)
+        layout.addWidget(hold_v_row)
+
+        self._step_row, _ = make_row("Step (mV)", self._step_mv)
+        layout.addWidget(self._step_row)
+        self._step_row.setVisible(False)
+
+        self._min_step_row, _ = make_row("Min Step (mV)", self._min_step_mv)
+        layout.addWidget(self._min_step_row)
+        self._min_step_row.setVisible(False)
+
+        self._ceiling_row, _ = make_row("V Ceiling (V)", self._v_ceiling)
+        layout.addWidget(self._ceiling_row)
+        self._ceiling_row.setVisible(False)
+
+        self._settle_row, _ = make_row("Settle Time (s)", self._settle_s)
+        layout.addWidget(self._settle_row)
+        self._settle_row.setVisible(False)
+
+        layout.addWidget(make_row("Duration (s)", self._duration)[0])
+        layout.addWidget(make_row("Interval (s)", self._interval)[0])
+        layout.addWidget(make_row("Irradiance (mW/cm\u00b2)", self._pin)[0])
+        layout.addWidget(make_row("Loops", self._loops)[0])
+        layout.addWidget(make_row("Compliance (mA)", self._compliance_ma)[0])
 
         layout.addStretch(1)
 
@@ -144,6 +226,45 @@ class SPOConfigPanel(Atom):
 
     def _on_run_clicked(self):
         self.run_requested = True
+
+    def _build_mppt_toggle_row(self):
+        row = QFrame()
+        row.setObjectName("FormRow")
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 8, 0, 8)
+
+        lbl = QLabel("MPP Tracking")
+        lbl.setObjectName("DimLabel")
+        row_layout.addWidget(lbl)
+        row_layout.addStretch(1)
+
+        colors = get_theme_colors(self.is_dark_mode)
+        accent = get_mode_accent(colors, "spo")
+        pill, (self._mppt_off_btn, self._mppt_on_btn), self._mppt_group = build_segmented_toggle(
+            ["OFF", "ON"], colors, accent, checked_index=0,
+        )
+        self._mppt_group.buttonClicked.connect(self._on_mppt_toggled)
+        self._toggle_pill = pill
+
+        row_layout.addWidget(pill)
+        # Note: rows referenced below (hold_v label, advanced param rows) are
+        # built *after* this toggle row, so don't call _apply_mppt_visibility().
+        return row
+
+    def _on_mppt_toggled(self, _button):
+        self._apply_mppt_visibility()
+
+    def _restyle_toggle_pill(self):
+        colors = get_theme_colors(self.is_dark_mode)
+        accent = get_mode_accent(colors, "spo")
+        restyle_segmented_toggle(self._toggle_pill, colors, accent)
+
+    def _apply_mppt_visibility(self):
+        on = self.mppt_enabled()
+        self._hold_v_label.setText("Start V (V)" if on else "Hold V (V)")
+        self._mppt_hint.setVisible(on)
+        for row in (self._step_row, self._min_step_row, self._ceiling_row, self._settle_row):
+            row.setVisible(on)
 
     # --- Substrate diagram (shared widget) ---
 
@@ -240,16 +361,34 @@ class SPOConfigPanel(Atom):
     def validate(self):
         if not self._substrate.has_active_pixel():
             return "ERROR: Please select at least one pixel."
+        if self.mppt_enabled() and self._hold_v.value() > self._v_ceiling.value():
+            return "ERROR: Start V must be at or below the V Ceiling."
         return None
 
+    def mppt_enabled(self):
+        return self._mppt_on_btn.isChecked()
+
     def get_spo_params(self):
-        return {
+        params = {
             "hold_v": self._hold_v.value(),
             "duration_s": self._duration.value(),
             "interval_s": self._interval.value(),
+            "pin": self._pin.value(),
             "compliance_a": self._compliance_ma.value() / 1000,
             "loops": self._loops.value(),
+            "mppt_enabled": self.mppt_enabled(),
         }
+        if params["mppt_enabled"]:
+            params.update({
+                "start_v": self._hold_v.value(),
+                "step_v": self._step_mv.value() / 1000,
+                "min_step_v": self._min_step_mv.value() / 1000,
+                "step_decay": 0.5,
+                "settle_s": self._settle_s.value(),
+                "v_min": 0.0,
+                "v_max": self._v_ceiling.value(),
+            })
+        return params
 
     def get_selected_pixels(self):
         return self._substrate.get_selected_pixels()
@@ -259,6 +398,14 @@ class SPOConfigPanel(Atom):
         self._name_field.setEnabled(not running)
         self._autosave_table_checkbox.setEnabled(not running)
         self._autosave_curves_checkbox.setEnabled(not running)
+        self._mppt_off_btn.setEnabled(not running)
+        self._mppt_on_btn.setEnabled(not running)
+        self._hold_v.setEnabled(not running)
+        self._step_mv.setEnabled(not running)
+        self._min_step_mv.setEnabled(not running)
+        self._v_ceiling.setEnabled(not running)
+        self._settle_s.setEnabled(not running)
+        self._pin.setEnabled(not running)
 
     def set_start_button_alert(self, alert):
         self._start_btn.setProperty("alert", "true" if alert else "false")
@@ -278,6 +425,7 @@ class SPOConfigPanel(Atom):
         for effect in self._shadow_widgets:
             update_shadow_color(effect, is_dark_mode)
         self._substrate.apply_theme(colors, is_dark_mode)
+        self._restyle_toggle_pill()
 
     def sample_name(self):
         return self._name_field.text().strip()

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 from gui.custom_widgets import RichTextHeaderView
 from gui.formatting import format_si
 from gui.effects import make_panel_shadow, update_shadow_color
-from gui.style import get_theme_colors
+from gui.style import get_theme_colors, get_mode_accent
 
 _HEADERS = [
     "Pixel", "Area", "V1 (V)", "V2 (V)", "Extracted Charge", "Peak |I|", "Status",
@@ -107,7 +107,7 @@ class DITResultsPanel(Atom):
 
         header = RichTextHeaderView(Qt.Horizontal, self._table)
         self._table.setHorizontalHeader(header)
-        header.set_text_color(get_theme_colors(self.is_dark_mode)["accent"])
+        header.set_text_color(get_mode_accent(get_theme_colors(self.is_dark_mode), "dit"))
 
         self._table.setHorizontalHeaderLabels(_HEADERS)
         self._table.setAlternatingRowColors(True)
@@ -252,4 +252,4 @@ class DITResultsPanel(Atom):
 
         header = self._table.horizontalHeader()
         if isinstance(header, RichTextHeaderView):
-            header.set_text_color(colors["accent"])
+            header.set_text_color(get_mode_accent(colors, "dit"))

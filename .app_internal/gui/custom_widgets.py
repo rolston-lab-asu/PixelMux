@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, QRectF, QSize, Signal
 from PySide6.QtGui import QTextDocument, QFont, QFontMetrics, QDoubleValidator, QIntValidator
 from PySide6.QtWidgets import (
     QSpinBox, QDoubleSpinBox, QComboBox, QFrame, QHeaderView, QStyle, QStyleOptionHeader,
-    QTabBar, QTabWidget, QAbstractSpinBox, QLineEdit,
+    QTabBar, QTabWidget, QAbstractSpinBox, QLineEdit, QHBoxLayout, QPushButton, QButtonGroup,
 )
 import pyqtgraph as pg
 
@@ -127,6 +127,70 @@ class PlainIntField(_PlainNumberField):
 class PlainDoubleField(_PlainNumberField):
     """Drop-in replacement for NoWheelDoubleSpinBox."""
     pass
+
+
+def build_segmented_toggle(labels, colors, accent, checked_index=0):
+    """Shared N-option pill toggle (e.g. OFF/ON, P(t)/V(t))
+
+    Returns (pill_frame, [buttons...], button_group).
+    """
+    pill = QFrame()
+    pill.setObjectName("TogglePill")
+    pill_layout = QHBoxLayout(pill)
+    pill_layout.setContentsMargins(2, 2, 2, 2)
+    pill_layout.setSpacing(0)
+
+    bold_font = QFont()
+    bold_font.setBold(True)
+    metrics = QFontMetrics(bold_font)
+    # Same width for every segment (visually balanced pill), sized to fit
+    # the WIDEST label plus comfortable horizontal padding.
+    widest_text = max(labels, key=lambda s: metrics.horizontalAdvance(s))
+    seg_width = metrics.horizontalAdvance(widest_text) + 28
+
+    buttons = []
+    for label in labels:
+        btn = QPushButton(label)
+        btn.setCheckable(True)
+        btn.setFixedSize(seg_width, 26)
+        btn.setObjectName("ToggleOption")
+        btn.setFont(bold_font)
+        pill_layout.addWidget(btn)
+        buttons.append(btn)
+    buttons[checked_index].setChecked(True)
+
+    group = QButtonGroup(pill)
+    group.setExclusive(True)
+    for btn in buttons:
+        group.addButton(btn)
+
+    restyle_segmented_toggle(pill, colors, accent)
+    return pill, buttons, group
+
+
+def restyle_segmented_toggle(pill, colors, accent):
+    """Re-applies the segmented-toggle QSS, e.g. after a light/dark theme
+    change."""
+    text_on_accent = colors.get("success_text_on", colors["accent_text_on"])
+    pill.setStyleSheet(f"""
+        QFrame#TogglePill {{
+            background-color: {colors['bg_input']};
+            border: 1px solid {colors['border']};
+            border-radius: 14px;
+        }}
+        QPushButton#ToggleOption {{
+            padding: 0px;
+            border: none;
+            border-radius: 12px;
+            background-color: transparent;
+            color: {colors['text_dim']};
+            font-weight: 600;
+        }}
+        QPushButton#ToggleOption:checked {{
+            background-color: {accent};
+            color: {text_on_accent};
+        }}
+    """)
 
 
 class NoWheelViewBox(pg.ViewBox):

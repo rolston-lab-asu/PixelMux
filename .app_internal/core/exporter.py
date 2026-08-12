@@ -31,9 +31,10 @@ _MANIFEST_HEADER = [
 ]
 
 _MANIFEST_HEADER_SPO = [
-    "timestamp", "sample_name", "loop", "pixel", "area_cm2",
-    "hold_voltage_v", "duration_s", "final_power_mW_cm2", "mean_power_mW_cm2",
-    "raw_curve_file",
+    "timestamp", "sample_name", "loop", "pixel", "area_cm2", "mppt_enabled",
+    "hold_voltage_v", "final_voltage_v", "duration_s", "pin_mw_cm2",
+    "final_power_mW_cm2", "mean_power_mW_cm2", "final_pce_percent",
+    "mean_pce_percent", "raw_curve_file",
 ]
 
 MANIFEST_FILENAME_DIT = "session_summary_dit.csv"
@@ -165,17 +166,19 @@ class ResultsExporter:
         return self.preview_txt_path(pixel, loop, suffix="SPO")
 
     def save_curve_now_spo(self, record):
-        """SPO counterpart of save_curve_now(): writes time_s/power_density
-        instead of voltage_v/current_density."""
+        """SPO counterpart of save_curve_now(): writes time_s/voltage_v/
+        power_density."""
         filename = self._unique_raw_curve_filename(record["pixel"], record["loop"], suffix="SPO")
         curve_path = os.path.join(self.raw_curves_dir(), filename)
 
         t = np.asarray(record["time_s"], dtype=float)
+        v = np.asarray(record.get("voltage_v", []), dtype=float)
         p = np.asarray(record["power_density_mw_cm2"], dtype=float)
         with open(curve_path, "w") as f:
-            f.write("# time_s\tpower_density_mW_cm2\n")
-            for time_s, power_density in zip(t, p):
-                f.write(f"{time_s:.8g}\t{power_density:.8g}\n")
+            f.write("# time_s\tvoltage_v\tpower_density_mW_cm2\n")
+            for idx, (time_s, power_density) in enumerate(zip(t, p)):
+                voltage_v = v[idx] if idx < len(v) else float("nan")
+                f.write(f"{time_s:.8g}\t{voltage_v:.8g}\t{power_density:.8g}\n")
 
         return curve_path, filename
 
@@ -194,10 +197,15 @@ class ResultsExporter:
                 int(record["loop"]),
                 record["pixel"],
                 f"{record['area_cm2']:.8g}",
+                "1" if record.get("mppt_enabled") else "0",
                 f"{record['hold_voltage_v']:.8g}",
+                f"{record.get('final_voltage_v', record['hold_voltage_v']):.8g}",
                 f"{record['time_s'][-1] if record['time_s'] else float('nan'):.8g}",
+                f"{record.get('pin_mw_cm2', 100):.8g}",
                 f"{record['final_power_density_mw_cm2']:.8g}",
                 f"{record['mean_power_density_mw_cm2']:.8g}",
+                f"{record.get('final_pce_percent', float('nan')):.8g}",
+                f"{record.get('mean_pce_percent', float('nan')):.8g}",
                 curve_filename or "",
             ])
 

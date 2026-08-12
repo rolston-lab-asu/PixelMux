@@ -92,7 +92,15 @@ class PlotManager:
         return self.loop_pen(loop_number, color=self.pixel_color(channel), width=2)
 
     def plot_curve(self, V, J, channel, loop_number):
-        self.plot.plot(V, J, pen=self.curve_pen(channel, loop_number))
+        return self.plot.plot(V, J, pen=self.curve_pen(channel, loop_number))
+
+    def set_y_axis(self, label, units, default_range):
+        """Switches what the y-axis represents (e.g. Power Density <-> Voltage)
+        and what range 'Reset View'/apply_default_range() returns to."""
+        self._y_label, self._y_units = label, units
+        self._default_y_range = default_range
+        self.plot.setLabel("left", label, units=units)
+        self.plot.setYRange(*default_range, padding=0)
 
     def _remove_legend(self, legend):
         if legend is None:

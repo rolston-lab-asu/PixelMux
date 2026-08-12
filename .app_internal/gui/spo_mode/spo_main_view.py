@@ -14,6 +14,7 @@ from gui.common_panels.log_panel import LogPanel
 from gui.spo_mode.spo_config_panel import SPOConfigPanel
 from gui.spo_mode.spo_plot_panel import SPOPlotPanel
 from gui.spo_mode.spo_results_panel import SPOResultsPanel
+from gui.style import get_mode_accent
 
 CONFIG_TAB_INDEX = 0
 SWEEP_TAB_INDEX = 1
@@ -37,6 +38,7 @@ class SPOMainView(Atom):
     progress_pct = Typed(QLabel)
     progress_txt = Typed(QLabel)
     _footer_shadow = Value()
+    _footer_title_lbl = Typed(QLabel)
 
     config_panel = Typed(SPOConfigPanel)
     plot_panel = Typed(SPOPlotPanel)
@@ -53,6 +55,7 @@ class SPOMainView(Atom):
         layout.setSpacing(10)
 
         self.tabs = SizeAwareTabWidget()
+        self.tabs.setObjectName("SPOTabs")
         self.tabs.setTabBar(SafeTabBar(self.tabs))
         self.tabs.tabBar().setElideMode(Qt.ElideNone)
         self.tabs.tabBar().setExpanding(False)
@@ -101,6 +104,7 @@ class SPOMainView(Atom):
         lbl_title = QLabel("SPO PROGRESS:")
         lbl_title.setObjectName("AccentLabel")
         footer_layout.addWidget(lbl_title)
+        self._footer_title_lbl = lbl_title
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
@@ -155,6 +159,7 @@ class SPOMainView(Atom):
         tab_bar.updateGeometry()
 
         update_shadow_color(self._footer_shadow, is_dark_mode)
+        self._footer_title_lbl.setStyleSheet(f"color: {get_mode_accent(colors, 'spo')};")
 
         for panel in self.theme_aware_panels:
             panel.apply_theme(colors, is_dark_mode)

@@ -1,15 +1,19 @@
 """
-SPO "SWEEP" tab: the live Power-vs-Time plot plus a live-metrics HUD
-sitting beside it.
+SPO "SWEEP" tab: the live Power-vs-Time (or Voltage-vs-Time) plot plus a
+live-metrics HUD sitting beside it.
 """
-from atom.api import Atom, Bool, Callable, Event, List, Typed
+from atom.api import Atom, Bool, Callable, Dict, Event, List, Str, Typed
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QFrame, QHBoxLayout, QVBoxLayout, QLabel, QPushButton
 
 from gui.plot_manager import PlotManager
+from gui.custom_widgets import build_segmented_toggle, restyle_segmented_toggle
 from gui.effects import make_panel_shadow, update_shadow_color
-from gui.style import get_theme_colors
+from gui.style import get_theme_colors, get_mode_accent
+
+_POWER_Y_AXIS = ("Power Density", "mW/cm\u00b2", (0, 25))
+_VOLTAGE_Y_AXIS = ("Voltage", "V", (0, 1.5))
 
 
 class SPOPlotPanel(Atom):
@@ -28,6 +32,21 @@ class SPOPlotPanel(Atom):
     _hud_abort = Typed(QPushButton)
     _shadow_widgets = List()
     _log = Callable(lambda message: None)
+
+    # View toggle: which series the plot currently shows.
+    _view_mode = Str("power")  # "power" or "voltage"
+    _view_power_btn = Typed(QPushButton)
+    _view_voltage_btn = Typed(QPushButton)
+    _view_toggle_group = Typed(object)
+    _view_toggle_pill = Typed(QFrame)
+
+    # Cached per-curve data so toggling redraws instantly without re-running
+    # the hold: {(channel, loop_number): {"t":[...], "v":[...], "p":[...]}}
+    _series_cache = Dict()
+    # {(channel, loop_number): PlotDataItem} -- updated in place via setData()
+    # on toggle, rather than clearing/re-adding (which would also disturb
+    # the pixel/loop legend).
+    _curve_items = Dict()
 
     def get_widget(self):
         return self._widget
@@ -49,13 +68,14 @@ class SPOPlotPanel(Atom):
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(10)
 
+        y_label, y_units, y_range = _POWER_Y_AXIS
         self.plot_manager = PlotManager(
             range_dialog_callback=lambda: self.plot_manager.open_range_dialog(
                 self.get_widget(), self._log
             ),
             x_label="Time", x_units="s",
-            y_label="Power Density", y_units="mW/cm\u00b2",
-            default_x_range=(0, 120), default_y_range=(0, 25),
+            y_label=y_label, y_units=y_units,
+            default_x_range=(0, 120), default_y_range=y_range,
         )
         layout.addWidget(self.plot_manager.widget, 1)
 
@@ -102,6 +122,8 @@ class SPOPlotPanel(Atom):
         self._hud_active_pixel.setObjectName("HudActivePixel")
         layout.addWidget(self._hud_active_pixel)
 
+        layout.addWidget(self._build_view_toggle_row())
+
         divider2 = QFrame()
         divider2.setObjectName("Divider")
         divider2.setFrameShape(QFrame.HLine)
@@ -145,6 +167,33 @@ class SPOPlotPanel(Atom):
         self._add_shadow(panel)
         return panel
 
+    def _build_view_toggle_row(self):
+        row = QFrame()
+        row.setObjectName("FormRow")
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 4, 0, 4)
+
+        lbl = QLabel("View")
+        lbl.setObjectName("DimLabel")
+        row_layout.addWidget(lbl)
+        row_layout.addStretch(1)
+
+        colors = get_theme_colors(self.is_dark_mode)
+        accent = get_mode_accent(colors, "spo")
+        checked_index = 0 if self._view_mode == "power" else 1
+        pill, (self._view_power_btn, self._view_voltage_btn), self._view_toggle_group = (
+            build_segmented_toggle(["P(t)", "V(t)"], colors, accent, checked_index=checked_index)
+        )
+        self._view_toggle_group.buttonClicked.connect(self._on_view_toggled)
+        self._view_toggle_pill = pill
+
+        row_layout.addWidget(pill)
+        return row
+
+    def _on_view_toggled(self, _button):
+        mode = "power" if self._view_power_btn.isChecked() else "voltage"
+        self.set_view_mode(mode)
+
     def _add_shadow(self, widget):
         effect = make_panel_shadow(widget, self.is_dark_mode)
         self._shadow_widgets = self._shadow_widgets + [effect]
@@ -163,16 +212,44 @@ class SPOPlotPanel(Atom):
     def reset_for_new_run(self):
         self.plot_manager.clear_curves()
         self.plot_manager.clear_legends()
-        self.plot_manager.apply_default_range()
+        y_label, y_units, y_range = _POWER_Y_AXIS if self._view_mode == "power" else _VOLTAGE_Y_AXIS
+        self.plot_manager.set_y_axis(y_label, y_units, y_range)
         self._hud_active_pixel.setText("Latest Pixel: --")
         for lbl in (self._hud_final_power, self._hud_mean_power):
             lbl.setText("--")
+        self._series_cache = {}
+        self._curve_items = {}
 
     def prepare_legends(self, selected_pixels, loop_count):
         self.plot_manager.reset_legends(selected_pixels, loop_count)
 
-    def plot_curve(self, t, power_density, channel, loop_number):
-        self.plot_manager.plot_curve(t, power_density, channel, loop_number)
+    def plot_curve(self, t, voltage, power_density, channel, loop_number):
+        """Caches both series for this (channel, loop) and plots whichever
+        one is currently selected by the P(t)/V(t) toggle."""
+        key = (channel, loop_number)
+        self._series_cache = {**self._series_cache, key: {
+            "t": list(t), "v": list(voltage), "p": list(power_density),
+        }}
+        y = power_density if self._view_mode == "power" else voltage
+        item = self.plot_manager.plot_curve(t, y, channel, loop_number)
+        self._curve_items = {**self._curve_items, key: item}
+
+    def set_view_mode(self, mode):
+        """Switches the plotted series (power density vs. voltage) for every
+        curve already drawn this run, in place."""
+        if mode not in ("power", "voltage"):
+            return
+        self._view_mode = mode
+
+        y_label, y_units, y_range = _POWER_Y_AXIS if mode == "power" else _VOLTAGE_Y_AXIS
+        self.plot_manager.set_y_axis(y_label, y_units, y_range)
+
+        for key, item in self._curve_items.items():
+            series = self._series_cache.get(key)
+            if series is None:
+                continue
+            y = series["p"] if mode == "power" else series["v"]
+            item.setData(series["t"], y)
 
     def set_active_pixel(self, pixel):
         self._hud_active_pixel.setText(f"Latest Pixel: {pixel}")
@@ -194,3 +271,5 @@ class SPOPlotPanel(Atom):
         plot.getAxis("left").setPen(pg.mkPen(colors["border"]))
         plot.getAxis("bottom").setTextPen(pg.mkPen(colors["text_dim"]))
         plot.getAxis("left").setTextPen(pg.mkPen(colors["text_dim"]))
+        accent = get_mode_accent(colors, "spo")
+        restyle_segmented_toggle(self._view_toggle_pill, colors, accent)

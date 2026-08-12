@@ -14,7 +14,7 @@ _PROJECT_ROOT = os.path.dirname(_APP_INTERNAL_DIR)
 
 
 def get_project_root():
-    """Absolute path to the MultiplexSolarSim folder."""
+    """Absolute path to the project root folder (three levels up from this file)."""
     return _PROJECT_ROOT
 
 

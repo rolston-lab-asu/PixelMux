@@ -14,10 +14,11 @@ from PySide6.QtWidgets import (
 from gui.custom_widgets import RichTextHeaderView
 from gui.formatting import format_metric
 from gui.effects import make_panel_shadow, update_shadow_color
-from gui.style import get_theme_colors
+from gui.style import get_theme_colors, get_mode_accent
 
 _HEADERS = [
-    "Loop", "Pixel", "Area", "Final Power (mW/cm\u00b2)", "Mean Power (mW/cm\u00b2)", "Status",
+    "Loop", "Pixel", "Area", "Final Power (mW/cm\u00b2)", "Mean Power (mW/cm\u00b2)",
+    "Final PCE (%)", "Final V (V)", "Status",
 ]
 
 
@@ -107,7 +108,7 @@ class SPOResultsPanel(Atom):
 
         header = RichTextHeaderView(Qt.Horizontal, self._table)
         self._table.setHorizontalHeader(header)
-        header.set_text_color(get_theme_colors(self.is_dark_mode)["accent"])
+        header.set_text_color(get_mode_accent(get_theme_colors(self.is_dark_mode), "spo"))
 
         self._table.setHorizontalHeaderLabels(_HEADERS)
         self._table.setAlternatingRowColors(True)
@@ -179,7 +180,8 @@ class SPOResultsPanel(Atom):
                 self._table.removeRow(r)
         self._delete_selected_btn.setEnabled(False)
 
-    def add_result_row(self, pixel, area, final_power, mean_power, status, loop_idx=None, row_token=None):
+    def add_result_row(self, pixel, area, final_power, mean_power, status,
+                        loop_idx=None, row_token=None, final_v=None, final_pce=None):
         r = self._table.rowCount()
         self._table.insertRow(r)
 
@@ -197,6 +199,8 @@ class SPOResultsPanel(Atom):
         else:
             values.extend(["--", "--"])
 
+        values.append(format_metric(final_pce, 2) if final_pce is not None else "--")
+        values.append(format_metric(final_v, 3) if final_v is not None else "--")
         values.append(status)
 
         role_colored = list(self._role_colored_items)
@@ -254,4 +258,4 @@ class SPOResultsPanel(Atom):
 
         header = self._table.horizontalHeader()
         if isinstance(header, RichTextHeaderView):
-            header.set_text_color(colors["accent"])
+            header.set_text_color(get_mode_accent(colors, "spo"))

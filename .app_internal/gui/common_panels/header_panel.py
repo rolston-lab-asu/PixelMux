@@ -12,7 +12,12 @@ from atom.api import Atom, Bool, Event, Typed
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
 
+from core.app_info import APP_NAME_UPPER
 from gui.effects import refresh_led_glow, set_status_led
+from gui.style import get_mode_accent
+
+BRAND_TITLE = APP_NAME_UPPER
+MODE_LABELS = {"jv": "JV SWEEP", "spo": "SPO", "dit": "DIT"}
 
 
 class HeaderPanel(Atom):
@@ -20,10 +25,12 @@ class HeaderPanel(Atom):
 
     is_dark_mode = Bool(False)
     _in_workspace = Bool(False)
+    _active_mode = Typed(object)  # None on Home, else "jv"/"spo"/"dit"
 
     connect_clicked = Event()
     theme_toggled = Event()
     home_clicked = Event()
+    about_clicked = Event()
 
     _widget = Typed(QWidget)
     _brand_title = Typed(QLabel)
@@ -32,6 +39,7 @@ class HeaderPanel(Atom):
     _relay_led = Typed(QLabel)
     _relay_lbl = Typed(QLabel)
     _connect_btn = Typed(QPushButton)
+    _about_btn = Typed(QPushButton)
     _theme_btn = Typed(QPushButton)
 
     def get_widget(self):
@@ -43,7 +51,7 @@ class HeaderPanel(Atom):
         layout.setContentsMargins(20, 8, 20, 8)
         layout.setSpacing(10)
 
-        self._brand_title = QLabel("MULTIPLEX SIM")
+        self._brand_title = QLabel(BRAND_TITLE)
         self._brand_title.setObjectName("BrandTitle")
         layout.addWidget(self._brand_title, 0, Qt.AlignVCenter)
 
@@ -71,6 +79,11 @@ class HeaderPanel(Atom):
 
         layout.addStretch(1)
 
+        self._about_btn = QPushButton("\u24d8 About")
+        self._about_btn.setObjectName("AboutButton")
+        self._about_btn.clicked.connect(self._on_about_clicked)
+        layout.addWidget(self._about_btn, 0, Qt.AlignVCenter)
+
         self._theme_btn = QPushButton()
         self._theme_btn.setObjectName("ThemeButton")
         self._theme_btn.clicked.connect(self._on_action_btn_clicked)
@@ -85,6 +98,9 @@ class HeaderPanel(Atom):
 
     def _on_connect_clicked(self):
         self.connect_clicked = True
+
+    def _on_about_clicked(self):
+        self.about_clicked = True
 
     def _on_action_btn_clicked(self):
         # One button, two identities: home glyph + `home_clicked` while a
@@ -109,9 +125,22 @@ class HeaderPanel(Atom):
 
     def set_workspace_mode(self, in_workspace):
         """Switches the action button between theme-toggle (Home) and
-        back-to-home (Workspace) identities."""
+        back-to-home (Workspace) identities. The About trigger is a
+        Home-only affordance, so it hides while a workspace is open."""
         self._in_workspace = in_workspace
+        self._about_btn.setVisible(not in_workspace)
         self._refresh_action_btn()
+
+    def set_mode(self, mode, colors):
+        """Swaps the brand title to the active mode's name/color (e.g.
+        'SPO' in green). Pass mode=None to restore the default brand."""
+        self._active_mode = mode
+        if mode is None:
+            self._brand_title.setText(BRAND_TITLE)
+            self._brand_title.setStyleSheet("")
+        else:
+            self._brand_title.setText(MODE_LABELS.get(mode, BRAND_TITLE))
+            self._brand_title.setStyleSheet(f"color: {get_mode_accent(colors, mode)};")
 
     def set_connection_status(self, keithley_ok, relay_ok, colors):
         set_status_led(self._keithley_led, self._keithley_lbl, "ok" if keithley_ok else "bad")
@@ -140,3 +169,6 @@ class HeaderPanel(Atom):
         self._refresh_action_btn()
         refresh_led_glow(self._keithley_led, colors)
         refresh_led_glow(self._relay_led, colors)
+        # Re-apply the active mode's brand color so it stays correct
+        # (light vs dark hex differ) across a theme toggle.
+        self.set_mode(self._active_mode, colors)

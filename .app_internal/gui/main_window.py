@@ -9,6 +9,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont, QColor
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QStackedWidget
 
+from core.app_info import APP_NAME
 from core.instrument_manager import InstrumentManager
 from core.exporter import ResultsExporter
 from core.paths import get_data_dir
@@ -22,6 +23,7 @@ from gui.style import get_theme, get_theme_colors
 
 from gui.common_panels.header_panel import HeaderPanel
 from gui.common_panels.home_panel import HomePanel
+from gui.common_panels.about_dialog import AboutDialog
 
 from gui.jv_mode.jv_main_view import JVMainView, SWEEP_TAB_INDEX as JV_SWEEP_TAB_INDEX
 from gui.spo_mode.spo_main_view import SPOMainView, SWEEP_TAB_INDEX as SPO_SWEEP_TAB_INDEX
@@ -40,7 +42,7 @@ class MainWindow(QWidget):
         self._active_mode_count = 0  # how many modes (JV/SPO/DIT) currently have a sweep running
         self.mock = mock
 
-        self.setWindowTitle("Multiplex Solar Simulator")
+        self.setWindowTitle(APP_NAME)
         self.resize(1440, 900)
         self.setMinimumSize(680, 560)
         self.setObjectName("Root")
@@ -67,6 +69,7 @@ class MainWindow(QWidget):
         self._register_theme_aware(self.header_panel)
         self.header_panel.observe("theme_toggled", self._on_theme_toggled)
         self.header_panel.observe("home_clicked", self._on_home_clicked)
+        self.header_panel.observe("about_clicked", self._on_about_clicked)
         main.addWidget(self.header_panel.create_widget(self))
 
         self.stack = QStackedWidget()
@@ -208,12 +211,17 @@ class MainWindow(QWidget):
     def _on_theme_toggled(self, change):
         self.toggle_theme()
 
+    def _on_about_clicked(self, change):
+        AboutDialog(self, get_theme_colors(self.is_dark_mode)).exec()
+
     def _on_module_selected(self, change):
-        page_index = self._mode_pages.get(change["value"])
+        mode = change["value"]
+        page_index = self._mode_pages.get(mode)
         if page_index is None:
             return
         self.stack.setCurrentIndex(page_index)
         self.header_panel.set_workspace_mode(True)
+        self.header_panel.set_mode(mode, get_theme_colors(self.is_dark_mode))
 
     def _on_home_clicked(self, change):
         if self.is_any_mode_running():
@@ -221,6 +229,7 @@ class MainWindow(QWidget):
             return
         self.stack.setCurrentIndex(HOME_PAGE_INDEX)
         self.header_panel.set_workspace_mode(False)
+        self.header_panel.set_mode(None, get_theme_colors(self.is_dark_mode))
 
     def toggle_theme(self):
         self.is_dark_mode = not self.is_dark_mode
