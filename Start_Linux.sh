@@ -23,7 +23,7 @@ fi
 
 install() {
     echo "===================================================="
-    echo "Multiplex Solar Simulator - First-Time Setup"
+    echo "Pixel Mux - First-Time Setup"
     echo "===================================================="
     echo "This only happens once. Please wait..."
     echo ""
@@ -167,7 +167,7 @@ if [ -z "$PYEXE" ]; then
     exit 1
 fi
 
-echo "[INFO] Launching Multiplex Solar Simulator..."
+echo "[INFO] Launching Pixel Mux..."
 
 pushd "$APP_DIR" >/dev/null
 

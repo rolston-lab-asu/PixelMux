@@ -75,6 +75,88 @@ def test_check_fault_boundaries_are_exclusive():
     assert check_fault(np.array([1e-6])) is None
 
 
+# --- check_fault: compliance-relative SHORT detection --------------------
+# A shorted pixel rails AT whatever compliance is configured, not at some
+# fixed absolute current. Compliance is user-settable (0.001-1000 mA,
+# default 105 mA), so a fixed 0.95 A threshold never fires in practice.
+
+def test_check_fault_detects_short_at_default_compliance():
+    default_compliance = 0.105  # KEITHLEY_DEFAULT_COMPLIANCE_A
+    railed = np.full(20, default_compliance)
+    assert check_fault(railed, compliance_a=default_compliance) == "SHORT"
+
+
+def test_check_fault_detects_short_at_low_compliance():
+    compliance = 0.010  # 10 mA
+    railed = np.full(20, compliance)
+    assert check_fault(railed, compliance_a=compliance) == "SHORT"
+
+
+def test_check_fault_normal_cell_not_flagged_short_near_compliance():
+    # A healthy cell drawing well under compliance must not trip SHORT.
+    compliance = 0.105
+    healthy = np.linspace(0.0, 0.0012, 20)  # ~1.2 mA, typical small pixel
+    assert check_fault(healthy, compliance_a=compliance) is None
+
+
+def test_check_fault_short_scales_with_configured_compliance():
+    # The same 105 mA reading is a short at 105 mA compliance, but is
+    # perfectly normal headroom at 1000 mA compliance.
+    reading = np.full(20, 0.105)
+    assert check_fault(reading, compliance_a=0.105) == "SHORT"
+    assert check_fault(reading, compliance_a=1.0) is None
+
+
+# --- check_fault: swept measurements must not mistake forward injection
+# past Voc for a short. A JV sweep routinely runs to 1.3 V on a ~0.6 V Voc
+# cell, where a HEALTHY diode rails at compliance. Only railing at zero
+# bias means the pixel is actually shorted.
+
+def _healthy_sweep():
+    """V from +1.3 down to -0.2; rails at compliance in deep forward bias,
+    delivers a normal ~1.2 mA photocurrent at and below 0 V."""
+    V = np.linspace(1.3, -0.2, 15)
+    I = np.where(V > 0.9, -0.105, np.where(V > 0.6, -0.03, 0.0012))
+    return V, I
+
+
+def test_check_fault_healthy_sweep_railing_past_voc_is_not_short():
+    V, I = _healthy_sweep()
+    assert check_fault(I, compliance_a=0.105, V=V) is None
+
+
+def test_check_fault_sweep_railed_at_zero_bias_is_short():
+    V = np.linspace(1.3, -0.2, 15)
+    I = np.full_like(V, -0.105)  # railed everywhere, including 0 V
+    assert check_fault(I, compliance_a=0.105, V=V) == "SHORT"
+
+
+def test_check_fault_fixed_bias_hold_uses_all_samples_railed():
+    # No V supplied (SPO/DIT sit at one operating point): every sample
+    # railed is a short, but a single transient spike is not.
+    assert check_fault(np.full(20, 0.105), compliance_a=0.105) == "SHORT"
+    spiky = np.full(20, 0.001)
+    spiky[7] = 0.105
+    assert check_fault(spiky, compliance_a=0.105) is None
+
+
+# --- check_fault: open_threshold_a override (DIT's sub-uA sense ranges) --
+
+def test_check_fault_default_open_threshold_flags_sub_microamp_reading():
+    assert check_fault(np.full(10, 5e-7)) == "OPEN"  # 0.5 uA, default 1 uA floor
+
+
+def test_check_fault_lower_open_threshold_accepts_same_reading():
+    # A real DIT transient decaying into the 100 nA sense range: 0.5 uA is
+    # normal signal there, not noise -- must not be flagged with a lower
+    # threshold appropriate to that range.
+    assert check_fault(np.full(10, 5e-7), open_threshold_a=5e-10) is None
+
+
+def test_check_fault_lower_open_threshold_still_flags_true_noise_floor():
+    assert check_fault(np.full(10, 1e-11), open_threshold_a=5e-10) == "OPEN"
+
+
 # --- extract_parameters: input validation -------------------------------
 
 def test_extract_parameters_rejects_zero_area():

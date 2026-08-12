@@ -38,7 +38,7 @@ call "%VENV_DIR%\Scripts\activate.bat"
 if not exist "logs" mkdir "logs"
 set "LOGFILE=%cd%\logs\run_latest.log"
 
-echo [INFO] Launching Multiplex Solar Simulator...
+echo [INFO] Launching Pixel Mux...
 pushd "%APP_DIR%"
 
 REM pythonw = windowed Python, no console flash on every launch.
@@ -56,7 +56,7 @@ REM  :install -- first-run setup only
 REM ====================================================================
 :install
 echo ====================================================
-echo Multiplex Solar Simulator - First-Time Setup
+echo Pixel Mux - First-Time Setup
 echo ====================================================
 echo This only happens once. Please wait...
 echo.

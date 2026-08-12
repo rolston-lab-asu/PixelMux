@@ -1,6 +1,6 @@
 # Deployment Guide
 
-One-time setup notes for running the Multiplex Solar Simulator on a new
+One-time setup notes for running Pixel Mux on a new
 machine. Most of this is handled automatically the first time you run
 `Start_Windows.bat` / `Start_Linux.sh`.
 

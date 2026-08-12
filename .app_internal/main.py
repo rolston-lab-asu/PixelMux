@@ -23,6 +23,7 @@ def main():
     from PySide6.QtWidgets import QApplication
     from PySide6.QtGui import QIcon
     from core.paths import get_icon_path
+    from core.app_info import APP_USER_MODEL_ID
     from gui.splash import build_splash, splash_message
 
     mock = "--mock" in sys.argv
@@ -32,7 +33,7 @@ def main():
     if sys.platform == "win32":
         import ctypes
         try:
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("MultiplexSim.App")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
         except Exception:
             pass  # cosmetic only, never worth failing startup over
 
