@@ -1,6 +1,6 @@
 # Pixel Mux v2.0.0 Beta
 
-**[Overview](README.md)** | **[Setup & Deployment Guide](DEPLOYMENT.md)** | **[Troubleshooting](DEPLOYMENT.md#troubleshooting-checklist)**
+**[Overview](README.md)** | **[Setup & Deployment Guide](DEPLOYMENT.md)** | **[Troubleshooting](DEPLOYMENT.md#troubleshooting-checklist)** | **[Changelog](CHANGELOG.md)**
 ___
 
 <p align="center">
@@ -11,7 +11,17 @@ ___
 </p>
 
  
-Python/PySide6 GUI for automated multi-pixel solar cell IV characterization. Integrates a **Keithley 2460 SMU** and a **Numato 16-channel USB relay** for multiplexed testing.
+Python/PySide6 GUI for automated multi-pixel solar cell characterization. Integrates a **Keithley 2460 SMU** and a **Numato 16-channel USB relay** for multiplexed testing across three measurement modes.
+
+## Measurement Modes
+
+| Mode | What it does |
+|---|---|
+| **JV Sweep** | Full current-voltage sweep - the standard characterization curve. |
+| **SPO** | Stabilized Power Output. Holds a pixel at its max power point via adaptive perturb-and-observe tracking (configurable step size, settle time, and voltage ceiling) rather than a fixed voltage, so stabilized PCE reflects where the cell actually wants to sit. |
+| **DIT** | Dark Injection Transient, with a configurable OPEN-current detection threshold. |
+
+Every run's key parameters - compliance, MPPT step/settle, sense range, OPEN threshold - are written into that run's exported CSV manifest alongside the results, so a result is always traceable back to the exact settings that produced it. Lab-wide defaults for all of the above live in the in-app **Settings** dialog (gear icon, Home screen).
 
 ## Hardware Requirements
 1. **Keithley 2460 SourceMeter** (Connected via USB or Ethernet).
@@ -63,3 +73,6 @@ This project uses a **Self-Contained Hardware Backend**. If the system-wide NI-V
 ## Documentation & Support
 *   **Need help with permissions or COM ports?** See the **[Deployment Guide](DEPLOYMENT.md)**.
 *   **Something not connecting?** Check the **[Troubleshooting Checklist](DEPLOYMENT.md#troubleshooting-checklist)**.
+
+Author, acknowledgements, and full license text are also available from
+the app itself via **About** (Home screen).
