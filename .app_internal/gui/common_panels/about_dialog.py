@@ -1,49 +1,27 @@
 """
 About dialog: app identity, credits, acknowledgements, and license.
 Opened from the header's About action (Home screen only).
-"""
-import os
 
+Two-column layout: a sidebar carries the identity mark (icon, version,
+repository link) while the main pane carries the descriptive content
+(title, tagline, credits, license, close).
+"""
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QPainter, QPainterPath, QPixmap
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QDialog, QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout,
+    QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QPushButton,
+    QVBoxLayout, QWidget,
 )
 
 from core.app_info import (
-    ACKNOWLEDGEMENTS, APP_NAME, APP_NAME_UPPER, APP_VERSION, AUTHOR,
-    COPYRIGHT_YEAR, GITHUB_LABEL, GITHUB_URL, LICENSE_NAME,
+    ACKNOWLEDGEMENTS, APP_NAME, APP_VERSION, AUTHOR, AUTHOR_INSTITUTION,
+    COPYRIGHT_YEAR, GITHUB_URL, LICENSE_NAME,
 )
-from core.paths import get_project_root
+from gui.icon_utils import rounded_icon
 
-ICON_SIZE = 46
-ICON_RADIUS = 9
-
-
-def _icon_path():
-    return os.path.join(get_project_root(), ".app_internal", "assets", "icons", "app_icon.png")
-
-
-def _rounded_icon(size, radius):
-    """Center-crops the app icon to a square and clips it to rounded
-    corners, so the About dialog gets the same mark as the taskbar icon."""
-    src = QPixmap(_icon_path())
-    if src.isNull():
-        return src
-    src = src.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-    x, y = (src.width() - size) // 2, (src.height() - size) // 2
-    src = src.copy(x, y, size, size)
-
-    rounded = QPixmap(size, size)
-    rounded.fill(Qt.transparent)
-    painter = QPainter(rounded)
-    painter.setRenderHint(QPainter.Antialiasing)
-    path = QPainterPath()
-    path.addRoundedRect(0, 0, size, size, radius, radius)
-    painter.setClipPath(path)
-    painter.drawPixmap(0, 0, src)
-    painter.end()
-    return rounded
+SIDEBAR_WIDTH = 150
+ICON_SIZE = 64
+ICON_RADIUS = 14
 
 
 class AboutDialog(QDialog):
@@ -51,13 +29,63 @@ class AboutDialog(QDialog):
         super().__init__(parent)
         self.setObjectName("AboutDialog")
         self.setWindowTitle(f"About {APP_NAME}")
-        self.setFixedWidth(460)
+        self.setFixedWidth(560)
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(26, 22, 26, 20)
+        outer = QHBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        outer.addLayout(self._build_identity_row())
+        outer.addWidget(self._build_sidebar())
+        outer.addWidget(self._build_main_pane(), 1)
+
+        self.setStyleSheet(self._local_qss(colors))
+
+        # Fix both dimensions so the dialog can't be dragged/resized —
+        # width is set above; height is derived from the populated layout.
+        self.adjustSize()
+        self.setFixedHeight(self.sizeHint().height())
+
+    # --- Column builders ---
+
+    def _build_sidebar(self):
+        sidebar = QFrame()
+        sidebar.setObjectName("AboutSidebar")
+        sidebar.setFixedWidth(SIDEBAR_WIDTH)
+        sidebar.setAttribute(Qt.WA_StyledBackground, True)
+
+        layout = QVBoxLayout(sidebar)
+        layout.setContentsMargins(16, 22, 16, 20)
+        layout.setSpacing(12)
+
+        icon_lbl = QLabel()
+        icon_lbl.setObjectName("AboutIcon")
+        icon_lbl.setFixedSize(ICON_SIZE, ICON_SIZE)
+        icon_lbl.setPixmap(rounded_icon(ICON_SIZE, ICON_RADIUS))
+        layout.addWidget(icon_lbl, 0, Qt.AlignHCenter)
+
+        version_lbl = QLabel(APP_VERSION)
+        version_lbl.setObjectName("VersionPill")
+        version_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(version_lbl, 0, Qt.AlignHCenter)
+
+        layout.addStretch(1)
+
+        repo_btn = QPushButton("Repository")
+        repo_btn.setObjectName("GithubButton")
+        repo_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
+        layout.addWidget(repo_btn)
+
+        return sidebar
+
+    def _build_main_pane(self):
+        pane = QWidget()
+        layout = QVBoxLayout(pane)
+        layout.setContentsMargins(22, 22, 22, 18)
+        layout.setSpacing(0)
+
+        name_lbl = QLabel(APP_NAME)
+        name_lbl.setObjectName("AboutTitleName")
+        layout.addWidget(name_lbl)
 
         tagline = QLabel(
             "A characterization suite for photovoltaic devices, built around "
@@ -65,124 +93,82 @@ class AboutDialog(QDialog):
         )
         tagline.setObjectName("DimLabel")
         tagline.setWordWrap(True)
-        tagline.setStyleSheet("font-weight: 500; margin-top: 14px;")
-        outer.addWidget(tagline)
+        tagline.setStyleSheet("font-weight: 500; margin-top: 4px;")
+        layout.addWidget(tagline)
 
-        outer.addWidget(self._divider())
-        outer.addWidget(self._section_label("CREDITS"))
-        outer.addLayout(self._info_row("Created by", AUTHOR))
-        outer.addLayout(self._info_row("Source", GITHUB_LABEL))
+        layout.addSpacing(14)
+        layout.addWidget(self._divider())
+        layout.addSpacing(14)
 
-        outer.addWidget(self._divider())
-        outer.addWidget(self._section_label("ACKNOWLEDGEMENTS"))
-        for name in ACKNOWLEDGEMENTS:
-            outer.addWidget(self._ack_row(name))
+        layout.addLayout(self._build_meta_grid())
+        layout.addLayout(self._build_footer_row())
 
-        outer.addWidget(self._divider())
-        outer.addWidget(self._section_label("LICENSE"))
-        outer.addLayout(self._license_row())
-
-        outer.addLayout(self._build_footer_row())
-
-        copyright_lbl = QLabel(
-            f"\u00a9 {COPYRIGHT_YEAR} {APP_NAME}. Released for internal / research use."
-        )
-        copyright_lbl.setObjectName("FieldLabel")
-        copyright_lbl.setAlignment(Qt.AlignHCenter)
-        copyright_lbl.setStyleSheet("margin-top: 14px;")
-        outer.addWidget(copyright_lbl)
-
-        self.setStyleSheet(self._local_qss(colors))
+        return pane
 
     # --- Row builders ---
 
-    def _build_identity_row(self):
-        row = QHBoxLayout()
-        row.setSpacing(14)
+    def _build_meta_grid(self):
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(10)
+        grid.setVerticalSpacing(12)
+        grid.setColumnMinimumWidth(0, 84)
+        grid.setColumnStretch(1, 1)
 
-        icon_lbl = QLabel()
-        icon_lbl.setObjectName("AboutIcon")
-        icon_lbl.setFixedSize(ICON_SIZE, ICON_SIZE)
-        icon_lbl.setPixmap(_rounded_icon(ICON_SIZE, ICON_RADIUS))
-        row.addWidget(icon_lbl, 0, Qt.AlignTop)
+        grid.addWidget(self._caption_label("CREATED BY"), 0, 0, Qt.AlignTop)
+        grid.addLayout(self._value_with_suffix(AUTHOR, AUTHOR_INSTITUTION), 0, 1)
 
-        name_col = QVBoxLayout()
-        name_col.setSpacing(2)
-        name_lbl = QLabel(APP_NAME_UPPER)
-        name_lbl.setObjectName("PanelTitleLarge")
-        name_col.addWidget(name_lbl)
-        version_lbl = QLabel(APP_VERSION)
-        version_lbl.setObjectName("FieldLabel")
-        name_col.addWidget(version_lbl)
-        row.addLayout(name_col)
-        row.addStretch(1)
-        return row
+        grid.addWidget(self._caption_label("THANKS TO"), 1, 0, Qt.AlignTop)
+        grid.addLayout(self._value_with_suffix(", ".join(ACKNOWLEDGEMENTS), None), 1, 1)
 
-    def _info_row(self, role_text, value_text):
-        row = QHBoxLayout()
-        role = QLabel(role_text)
-        role.setObjectName("DimLabel")
-        role.setStyleSheet("font-weight: 500;")
-        value = QLabel(value_text)
-        value.setObjectName("MainLabel")
-        row.addWidget(role)
-        row.addStretch(1)
-        row.addWidget(value)
-        return row
-
-    def _ack_row(self, name):
-        card = QFrame()
-        card.setObjectName("AckRow")
-        card.setAttribute(Qt.WA_StyledBackground, True)
-        layout = QVBoxLayout(card)
-        layout.setContentsMargins(12, 9, 12, 9)
-        layout.setSpacing(1)
-
-        name_lbl = QLabel(name)
-        name_lbl.setObjectName("AckName")
-        name_lbl.setMinimumWidth(140)
-        layout.addWidget(name_lbl)
-        return card
-
-    def _license_row(self):
-        row = QHBoxLayout()
-        role = QLabel(f"{APP_NAME} is released under the")
-        role.setObjectName("DimLabel")
-        role.setStyleSheet("font-weight: 500;")
-        role.setWordWrap(True)
+        grid.addWidget(self._caption_label("LICENSE"), 2, 0, Qt.AlignVCenter)
         chip = QLabel(LICENSE_NAME)
         chip.setObjectName("LicenseChip")
-        row.addWidget(role, 1)
-        row.addWidget(chip, 0, Qt.AlignVCenter)
+        grid.addWidget(chip, 2, 1, Qt.AlignLeft | Qt.AlignVCenter)
+
+        return grid
+
+    def _caption_label(self, text):
+        lbl = QLabel(text)
+        lbl.setObjectName("FieldLabel")
+        lbl.setStyleSheet("letter-spacing: 0.4px;")
+        return lbl
+
+    def _value_with_suffix(self, value_text, suffix_text):
+        row = QHBoxLayout()
+        row.setSpacing(4)
+        value = QLabel(value_text)
+        value.setObjectName("MainLabel")
+        row.addWidget(value)
+        if suffix_text:
+            suffix = QLabel(f"({suffix_text})")
+            suffix.setObjectName("DimLabel")
+            suffix.setStyleSheet("font-weight: 400; font-size: 9pt;")
+            row.addWidget(suffix)
+        row.addStretch(1)
         return row
 
     def _build_footer_row(self):
         row = QHBoxLayout()
+        row.setContentsMargins(0, 22, 0, 0)
         row.setSpacing(10)
-        row.setContentsMargins(0, 20, 0, 0)
 
-        gh_btn = QPushButton("View on GitHub")
-        gh_btn.setObjectName("GithubButton")
-        gh_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
-        row.addWidget(gh_btn, 1)
+        copyright_lbl = QLabel(
+            f"\u00a9 {COPYRIGHT_YEAR} {APP_NAME} \u00b7 Research use"
+        )
+        copyright_lbl.setObjectName("FieldLabel")
+        row.addWidget(copyright_lbl)
+        row.addStretch(1)
 
         close_btn = QPushButton("Close")
         close_btn.setObjectName("PrimaryButton")
         close_btn.clicked.connect(self.accept)
-        row.addWidget(close_btn, 0)
+        row.addWidget(close_btn)
         return row
-
-    def _section_label(self, text):
-        lbl = QLabel(text.upper())
-        lbl.setObjectName("AccentLabel")
-        lbl.setStyleSheet("font-size: 9pt; margin-bottom: 10px;")
-        return lbl
 
     def _divider(self):
         line = QFrame()
         line.setObjectName("Divider")
         line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet("margin: 18px 0;")
         return line
 
     def _local_qss(self, c):
@@ -190,19 +176,26 @@ class AboutDialog(QDialog):
         QDialog#AboutDialog {{
             background-color: {c['bg_panel']};
         }}
+        QFrame#AboutSidebar {{
+            background-color: {c['card_bg']};
+            border-right: 1px solid {c['border']};
+        }}
         QLabel#AboutIcon {{
             border: 1px solid {c['border']};
             border-radius: {ICON_RADIUS}px;
         }}
-        QFrame#AckRow {{
-            background-color: {c['card_bg']};
-            border: 1px solid {c['border']};
-            border-radius: 7px;
+        QLabel#VersionPill {{
+            color: {c['accent']};
+            background-color: {c['accent_glow']};
+            font-weight: 700;
+            font-size: 8pt;
+            padding: 3px 9px;
+            border-radius: 6px;
         }}
-        QLabel#AckName {{
+        QLabel#AboutTitleName {{
             color: {c['text_main']};
-            font-weight: 600;
-            font-size: 12px;
+            font-weight: 700;
+            font-size: 13pt;
         }}
         QLabel#LicenseChip {{
             font-size: 9pt;

@@ -24,7 +24,7 @@ def main():
     from PySide6.QtGui import QIcon
     from core.paths import get_icon_path
     from core.app_info import APP_USER_MODEL_ID
-    from gui.splash import build_splash, splash_message
+    from gui.splash import build_splash, splash_progress
 
     mock = "--mock" in sys.argv
 
@@ -42,16 +42,16 @@ def main():
 
     # --- Stage 1: splash appears before any heavy imports ---
     splash = build_splash(app)
-    splash_message(splash, "Starting up...")
+    splash_progress(splash, "Starting up...", 8)
     splash.show()
     app.processEvents()
 
     # --- Stage 2: heavy imports happen only now ---
-    splash_message(splash, "Loading numerical libraries...")
+    splash_progress(splash, "Loading numerical libraries...", 45)
     app.processEvents()
     import pyqtgraph as pg
 
-    splash_message(splash, "Building interface...")
+    splash_progress(splash, "Building interface...", 80)
     app.processEvents()
     from gui.main_window import MainWindow
 
@@ -59,6 +59,8 @@ def main():
     window = MainWindow(mock=mock)
     window.setWindowIcon(app.windowIcon())
 
+    splash_progress(splash, "Ready", 100)
+    app.processEvents()
     splash.finish(window)
     window.show()
 

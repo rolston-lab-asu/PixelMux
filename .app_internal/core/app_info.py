@@ -14,6 +14,7 @@ GITHUB_URL = "https://github.com/rolston-lab-asu/PixelMux"
 GITHUB_LABEL = "rolston-lab-asu/PixelMux"
 
 AUTHOR = "Isahi Soria"
+AUTHOR_INSTITUTION = "Rolston Lab, ASU"
 ACKNOWLEDGEMENTS = ["Marco Casareto", "Favian Tippin"]
 
 LICENSE_NAME = "BSD-3-CLAUSE"
