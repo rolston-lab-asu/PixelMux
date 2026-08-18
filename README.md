@@ -17,11 +17,9 @@ Python/PySide6 GUI for automated multi-pixel solar cell characterization. Integr
 
 | Mode | What it does |
 |---|---|
-| **JV Sweep** | Full current-voltage sweep - the standard characterization curve. |
-| **SPO** | Stabilized Power Output. Holds a pixel at its max power point via adaptive perturb-and-observe tracking (configurable step size, settle time, and voltage ceiling) rather than a fixed voltage, so stabilized PCE reflects where the cell actually wants to sit. |
+| **JV Sweep** | Full current-voltage sweep |
+| **SPO** | Stabilized Power Output. Can be configured to hold a pixel at its max power point via configurable tracking or strict voltage. |
 | **DIT** | Dark Injection Transient, with a configurable OPEN-current detection threshold. |
-
-Every run's key parameters - compliance, MPPT step/settle, sense range, OPEN threshold - are written into that run's exported CSV manifest alongside the results, so a result is always traceable back to the exact settings that produced it. Lab-wide defaults for all of the above live in the in-app **Settings** dialog (gear icon, Home screen).
 
 ## Hardware Requirements
 1. **Keithley 2460 SourceMeter** (Connected via USB or Ethernet).
