@@ -1,17 +1,25 @@
-# Multiplex Solar Simulator Beta V1.0
+# Pixel Mux v2.0.0 Beta
 
 **[Overview](README.md)** | **[Setup & Deployment Guide](DEPLOYMENT.md)** | **[Troubleshooting](DEPLOYMENT.md#troubleshooting-checklist)**
 ___
 
 <p align="center">
-  <a href="https://github.com/MasterUser43/MultiplexSolarSim/releases/latest">
-    <img src="https://img.shields.io/github/v/release/MasterUser43/MultiplexSolarSim?include_prereleases&label=Download%20Beta&logo=github&style=for-the-badge&color=blue" alt="Download">
+  <a href="https://github.com/rolston-lab-asu/PixelMux/releases/latest">
+    <img src="https://img.shields.io/github/v/release/rolston-lab-asu/PixelMux?include_prereleases&label=Download%20Beta&logo=github&style=for-the-badge&color=blue" alt="Download">
   </a>
-  <img src="https://img.shields.io/github/license/MasterUser43/MultiplexSolarSim?style=for-the-badge&color=orange" alt="License">
+  <img src="https://img.shields.io/github/license/rolston-lab-asu/PixelMux?style=for-the-badge&color=orange" alt="License">
 </p>
 
  
-Python/PyQt5 GUI for automated multi-pixel solar cell IV characterization. Integrates a **Keithley 2460 SMU** and a **Numato 16-channel USB relay** for multiplexed testing.
+Python/PySide6 GUI for automated multi-pixel solar cell characterization. Integrates a **Keithley 2460 SMU** and a **Numato 16-channel USB relay** for multiplexed testing across three measurement modes.
+
+## Measurement Modes
+
+| Mode | What it does |
+|---|---|
+| **JV Sweep** | Full current-voltage sweep |
+| **SPO** | Stabilized Power Output. Can be configured to hold a pixel at its max power point via configurable tracking or strict voltage. |
+| **DIT** | Dark Injection Transient, with a configurable OPEN-current detection threshold. |
 
 ## Hardware Requirements
 1. **Keithley 2460 SourceMeter** (Connected via USB or Ethernet).
@@ -44,7 +52,7 @@ Nothing is installed system-wide and is contained within a local `.venv`.
 ## What's in this folder
 
 ```
-MultiplexSolarSim/
+PixelMux/
 ├── Start_Windows.bat     <- Double-click this on Windows
 ├── Start_Linux.sh        <- Run this on Linux
 ├── README.md
@@ -63,3 +71,6 @@ This project uses a **Self-Contained Hardware Backend**. If the system-wide NI-V
 ## Documentation & Support
 *   **Need help with permissions or COM ports?** See the **[Deployment Guide](DEPLOYMENT.md)**.
 *   **Something not connecting?** Check the **[Troubleshooting Checklist](DEPLOYMENT.md#troubleshooting-checklist)**.
+
+Author, acknowledgements, and full license text are also available from
+the app itself via **About** (Home screen).

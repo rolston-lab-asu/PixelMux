@@ -1,15 +1,19 @@
 """
-System event log panel. Owns the log text widget, the 
+System event log panel. Owns the log text widget, the
 save-directory display, and its own TXT export/clear actions.
+
+This is a RawWidget wrapper around a plain PySide6 widget tree
+given that log_message()/_retheme_log().
 """
 import os
 import time
 
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor, QFont, QTextCursor, QTextCharFormat, QTextFormat
-from PyQt5.QtWidgets import (
-    QApplication, QWidget, QFrame, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit,
-    QPushButton, QTextEdit,
+from atom.api import Atom, Bool, Str, Typed, Value
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QFont, QTextCursor, QTextCharFormat, QTextFormat
+from PySide6.QtWidgets import (
+    QApplication, QFrame, QHBoxLayout, QVBoxLayout, QLabel, QLineEdit,
+    QPushButton, QTextEdit, QWidget,
 )
 
 from core.paths import get_logs_dir
@@ -21,25 +25,30 @@ from gui.style import get_theme_colors
 _LOG_ROLE_PROPERTY = QTextFormat.UserProperty + 1
 
 
-class LogPanel(QWidget):
-    """Because Qt limits each widget to one graphics effect, 
-    the tab-switch animation and the card's shadow cannot share the same widget.
-    """
+class LogPanel(Atom):
+    __slots__ = ('__weakref__',)
 
-    def __init__(self, output_dir, is_dark_mode=False, parent=None):
-        super().__init__(parent)
-        self.is_dark_mode = is_dark_mode
-        self.output_dir = output_dir
+    output_dir = Str()
+    is_dark_mode = Bool(False)
 
-        outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+    _widget = Typed(QWidget)
+    _log = Typed(QTextEdit)
+    _output_dir_field = Typed(QLineEdit)
+    _shadow = Value()  # QGraphicsDropShadowEffect, from make_panel_shadow()
 
-        self._card = QFrame()
-        self._card.setObjectName("PanelContainer")
-        self._card.setAttribute(Qt.WA_StyledBackground, True)
-        outer.addWidget(self._card)
+    def get_widget(self):
+        return self._widget
 
-        layout = QVBoxLayout(self._card)
+    def create_widget(self, parent):
+        container = QWidget(parent)
+        outer_layout = QVBoxLayout(container)
+
+        card = QFrame()
+        card.setObjectName("PanelContainer")
+        card.setAttribute(Qt.WA_StyledBackground, True)
+        outer_layout.addWidget(card)
+
+        layout = QVBoxLayout(card)
         layout.setContentsMargins(18, 18, 18, 18)
         layout.setSpacing(12)
 
@@ -52,36 +61,40 @@ class LogPanel(QWidget):
         divider.setFrameShape(QFrame.HLine)
         layout.addWidget(divider)
 
-        self.log = QTextEdit()
-        self.log.setReadOnly(True)
+        self._log = QTextEdit()
+        self._log.setReadOnly(True)
 
         top = QHBoxLayout()
 
         save_dir_lbl = QLabel("Save Directory:")
         save_dir_lbl.setObjectName("DimLabel")
         top.addWidget(save_dir_lbl)
-        self.output_dir_field = QLineEdit(self.output_dir)
-        self.output_dir_field.setReadOnly(True)
-        top.addWidget(self.output_dir_field, 1)
+        self._output_dir_field = QLineEdit(self.output_dir)
+        self._output_dir_field.setReadOnly(True)
+        top.addWidget(self._output_dir_field, 1)
 
-        self.export_log_btn = QPushButton("Export .TXT")
-        self.export_log_btn.clicked.connect(self.export_log_data)
-        top.addWidget(self.export_log_btn)
+        export_log_btn = QPushButton("Export .TXT")
+        export_log_btn.clicked.connect(self.export_log_data)
+        top.addWidget(export_log_btn)
 
-        self.clear_log_btn = QPushButton("Clear Log")
-        self.clear_log_btn.clicked.connect(self.log.clear)
-        top.addWidget(self.clear_log_btn)
+        clear_log_btn = QPushButton("Clear Log")
+        clear_log_btn.clicked.connect(self._log.clear)
+        top.addWidget(clear_log_btn)
 
         layout.addLayout(top)
-        layout.addWidget(self.log)
+        layout.addWidget(self._log)
 
-        self._shadow = make_panel_shadow(self._card, self.is_dark_mode)
+        self._shadow = make_panel_shadow(card, self.is_dark_mode)
 
-    # --- Public API ---
+        self._widget = container
+        return container
+
+    # --- Public API  ---
 
     def set_output_dir(self, path):
         self.output_dir = path
-        self.output_dir_field.setText(path)
+        if self._output_dir_field is not None:
+            self._output_dir_field.setText(path)
 
     def log_message(self, message):
         stamp = time.strftime("%H:%M:%S")
@@ -98,9 +111,9 @@ class LogPanel(QWidget):
             "ERROR": ("error", "error"),
         }
 
-        cursor = self.log.textCursor()
+        cursor = self._log.textCursor()
         cursor.movePosition(QTextCursor.End)
-        if self.log.toPlainText():
+        if self._log.toPlainText():
             cursor.insertBlock()
 
         def write(text, role, bold=False):
@@ -121,12 +134,12 @@ class LogPanel(QWidget):
         else:
             write(message, "text_main")
 
-        self.log.setTextCursor(cursor)
-        self.log.moveCursor(QTextCursor.End)  # Auto-scroll
+        self._log.setTextCursor(cursor)
+        self._log.moveCursor(QTextCursor.End)  # Auto-scroll
         QApplication.processEvents()
 
     def export_log_data(self):
-        log_text = self.log.toPlainText()
+        log_text = self._log.toPlainText()
         if not log_text.strip():
             self.log_message("WARNING: Log is empty, nothing to export.")
             return
@@ -150,7 +163,7 @@ class LogPanel(QWidget):
     def _retheme_log(self, colors):
         """Walks the log's existing text runs in place and updates each
         one's color from its tagged role, using the current theme."""
-        doc = self.log.document()
+        doc = self._log.document()
 
         block = doc.begin()
         while block.isValid():

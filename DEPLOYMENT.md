@@ -1,27 +1,65 @@
 # Deployment Guide
 
-One-time setup notes for running the Multiplex Solar Simulator on a new
-machine. Most of this is handled automatically the first time you run
+One-time setup notes for running Pixel Mux on a new machine. Most of
+this is handled automatically the first time you run
 `Start_Windows.bat` / `Start_Linux.sh`.
 
-This document exists for the steps that need a human decision (IT permissions, 
-physical port identification) and as a reference if you skipped a prompt during 
-install and need to do it later.
+This document is for the steps that need a human decision, and as a 
+reference if you skipped a prompt during install and need to do it later.
+
+## Quick Start
+
+| | Windows | Linux |
+|---|---|---|
+| Run | Double-click `Start_Windows.bat` | `bash Start_Linux.sh` |
+| First launch | Installs into a local `.venv` (~5 min worst case) | Installs into a local `.venv`, walks through one-time `sudo` prompts for USB/serial access |
+| Later launches | Skips straight to the app | Skips straight to the app |
+
+Nothing is installed system-wide on either OS. Full per-OS walkthroughs
+are below, collapsed by default - expand whichever OS you're on if you need the
+step-by-step.
 
 ---
 
-## Windows
+## Troubleshooting Checklist
+
+**App won't launch, nothing visible happens**
+- Windows: check `logs\run_latest.log`
+
+**Relay not found**
+- Windows: confirm its COM port appears in **Device Manager → Ports
+  (COM & LPT)** - see "Identifying the Numato Relay's COM port" in the
+  Windows details below.
+- Linux: almost always the `dialout` group step - confirm with
+  `groups $USER`, then check `lsusb` for a `2a19:0c03` entry. A
+  permission error at the OS level surfaces through `find_numato()`
+  as a generic "not found," not a permission message.
+
+**Keithley not found**
+- Windows: try deleting `.venv` and re-running `Start_Windows.bat` to
+  reinstall `pyvisa-py`/`pyusb`/`libusb-package` cleanly.
+- Linux: check the udev rule (see "One-time hardware permission setup"
+  in the Linux details below) exists, and that you
+  replugged the Keithley's USB cable after adding it. Confirm with
+  `lsusb`, looking for `05e6:2460`.
+
+**Both instruments missing entirely (either OS)**
+- Check physical connections and power before revisiting anything above.
+
+---
+
+<details>
+<summary><b>Windows - full setup details</b></summary>
 
 ### Installation
 Double-click **`Start_Windows.bat`**. The first run creates a local `.venv`
 folder inside the project directory and installs everything from
-`.app_internal\requirements.txt` into it. Nothing is installed system-wide,
-and no administrator prompt should appear. Every run after that skips
-straight to launching the app.
+`.app_internal\requirements.txt` into it. No administrator prompt should appear. 
+Every run after that skips straight to launching the app.
 
 If your machine doesn't already have Python 3.10+, install it from
 [python.org](https://www.python.org/downloads/) - during setup, check
-**"Add python.exe to PATH"**. 
+**"Add python.exe to PATH"**.
 
 Typically, python is allowed through relevant IT-managed devices confirmed
 from testing.
@@ -31,7 +69,7 @@ from testing.
 1. Click **"More info"**
 2. Click **"Run anyway"**
 
-This only appears once per file.
+This only appears once.
 
 ### Identifying the Numato Relay's COM port
 The app auto-detects the relay by USB vendor/product ID, so this is only
@@ -57,17 +95,10 @@ which backend is used:
    devices** if a VISA driver has claimed it) for an entry resembling
    `Keithley Instruments SMU 2460`
 
-### Troubleshooting checklist
-- App won't start, nothing visible happens → check `logs\run_latest.log`
-- "Keithley not found" in the app's log panel, but Device Manager sees it
-  → try deleting `.venv` and re-running `Start_Windows.bat` to reinstall
-  `pyvisa-py`/`pyusb`/`libusb-package` cleanly
-- Relay not found → confirm its COM port appears in Device Manager per
-  above; if not, it's a cabling/driver issue, not a software one
+</details>
 
----
-
-## Linux
+<details>
+<summary><b>Linux - full setup details</b></summary>
 
 ### Installation
 ```bash
@@ -88,8 +119,7 @@ sudo apt install python3-venv
 
 ### One-time hardware permission setup
 These are the three checks `Start_Linux.sh` runs automatically. Manual
-versions below, if you skipped a prompt or are setting up a machine where
-you don't have your own sudo access yet.
+versions below, if you skipped a prompt.
 
 **1. Serial access for the Numato relay** - your user needs to be in the
 `dialout` group:
@@ -132,12 +162,4 @@ Look for a `05e6:2460` (Keithley) and a `2a19:0c03` (Numato) entry. If
 either is missing, that's a cabling/power problem, not a permissions or
 software one - check the physical connection before troubleshooting.
 
-### Troubleshooting checklist
-- "Relay not found" but `lsusb` shows it → almost always the `dialout`
-  group step above; a permission error at the OS level surfaces through
-  `find_numato()` as a generic "not found," not a permission message
-- "Keithley not found" but `lsusb` shows it → check the udev rule (step 3)
-  is actually in place, and that you replugged the cable after adding it
-- Both instruments missing from `lsusb` entirely → hardware/cabling issue,
-  not a setup issue - check physical connections and power before
-  revisiting any of the above
+</details>

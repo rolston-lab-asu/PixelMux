@@ -1,125 +1,174 @@
 """
 Top header bar: brand title, Keithley/Relay status LEDs, connect button,
-sample ID field, output-folder browse button, and the theme toggle.
+and the theme toggle.
+
+Plain Atom object + imperative PySide6 layout, not Enaml given uncomptability.
+Instead, simply focus on atom stuff.
+
+Qt-facing signals (connect_clicked/theme_toggled) are plain Atom Events;
+controllers use `.observe(...)`.
 """
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QFont, QFontMetrics
-from PyQt5.QtWidgets import QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy
+from atom.api import Atom, Bool, Event, Typed
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
 
-from gui.effects import set_status_led, refresh_led_glow
+from core.app_info import APP_NAME_UPPER
+from gui.effects import refresh_led_glow, set_status_led
+from gui.style import get_mode_accent
+
+BRAND_TITLE = APP_NAME_UPPER
+MODE_LABELS = {"jv": "JV SWEEP", "spo": "SPO", "dit": "DIT"}
 
 
-class HeaderPanel(QFrame):
-    connect_clicked = pyqtSignal()
-    browse_clicked = pyqtSignal()
-    theme_toggled = pyqtSignal()
+class HeaderPanel(Atom):
+    __slots__ = ('__weakref__',)
 
-    def __init__(self, is_dark_mode=False, parent=None):
-        super().__init__(parent)
-        self.is_dark_mode = is_dark_mode
-        self.setObjectName("Header")
-        self.setFixedHeight(76)
+    is_dark_mode = Bool(False)
+    _in_workspace = Bool(False)
+    _active_mode = Typed(object)  # None on Home, else "jv"/"spo"/"dit"
 
-        layout = QHBoxLayout(self)
+    connect_clicked = Event()
+    theme_toggled = Event()
+    home_clicked = Event()
+    about_clicked = Event()
+
+    _widget = Typed(QWidget)
+    _brand_title = Typed(QLabel)
+    _keithley_led = Typed(QLabel)
+    _keithley_lbl = Typed(QLabel)
+    _relay_led = Typed(QLabel)
+    _relay_lbl = Typed(QLabel)
+    _connect_btn = Typed(QPushButton)
+    _about_btn = Typed(QPushButton)
+    _theme_btn = Typed(QPushButton)
+
+    def get_widget(self):
+        return self._widget
+
+    def create_widget(self, parent):
+        container = QWidget(parent)
+        layout = QHBoxLayout(container)
         layout.setContentsMargins(20, 8, 20, 8)
-        layout.setSpacing(15)
-        layout.setAlignment(Qt.AlignVCenter)
+        layout.setSpacing(10)
 
-        # Brand Title
-        self.brand_title = QLabel("MULTIPLEX SIM")
-        self.brand_title.setObjectName("BrandTitle")
-        self.brand_title.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
-        brand_font = QFont(self.font())
-        brand_font.setPointSize(14)
-        brand_font.setBold(True)
-        self.brand_title.setMinimumWidth(QFontMetrics(brand_font).horizontalAdvance("MULTIPLEX SIM") + 16)
-        layout.addWidget(self.brand_title)
+        self._brand_title = QLabel(BRAND_TITLE)
+        self._brand_title.setObjectName("BrandTitle")
+        layout.addWidget(self._brand_title, 0, Qt.AlignVCenter)
 
-        layout.addSpacing(10)
+        self._keithley_led = QLabel("")
+        self._keithley_led.setObjectName("StatusLED")
+        self._keithley_led.setAttribute(Qt.WA_StyledBackground, True)
+        layout.addWidget(self._keithley_led, 0, Qt.AlignVCenter)
 
-        # Keithley LED
-        self.keithley_led = QLabel()
-        self.keithley_led.setObjectName("StatusLED")
-        self.keithley_led.setProperty("status", "idle")
-        layout.addWidget(self.keithley_led)
+        self._keithley_lbl = QLabel("KEITHLEY\n2460")
+        self._keithley_lbl.setObjectName("StatusLabel")
+        layout.addWidget(self._keithley_lbl, 0, Qt.AlignVCenter)
 
-        self.keithley_lbl = QLabel("KEITHLEY\n2460")
-        self.keithley_lbl.setObjectName("StatusLabel")
-        self.keithley_lbl.setProperty("status", "idle")
-        self.keithley_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        layout.addWidget(self.keithley_lbl)
+        self._relay_led = QLabel("")
+        self._relay_led.setObjectName("StatusLED")
+        self._relay_led.setAttribute(Qt.WA_StyledBackground, True)
+        layout.addWidget(self._relay_led, 0, Qt.AlignVCenter)
 
-        layout.addSpacing(5)
+        self._relay_lbl = QLabel("RELAY\nMATRIX")
+        self._relay_lbl.setObjectName("StatusLabel")
+        layout.addWidget(self._relay_lbl, 0, Qt.AlignVCenter)
 
-        # Relay LED
-        self.relay_led = QLabel()
-        self.relay_led.setObjectName("StatusLED")
-        self.relay_led.setProperty("status", "idle")
-        layout.addWidget(self.relay_led)
-
-        self.relay_lbl = QLabel("RELAY\nMATRIX")
-        self.relay_lbl.setObjectName("StatusLabel")
-        self.relay_lbl.setProperty("status", "idle")
-        self.relay_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        layout.addWidget(self.relay_lbl)
-
-        layout.addSpacing(15)
-
-        # Compact Connection Button
-        self.connect_btn = QPushButton("Connect")
-        self.connect_btn.setMinimumHeight(32)
-        self.connect_btn.clicked.connect(self.connect_clicked.emit)
-        layout.addWidget(self.connect_btn)
+        self._connect_btn = QPushButton("Connect")
+        self._connect_btn.clicked.connect(self._on_connect_clicked)
+        layout.addWidget(self._connect_btn, 0, Qt.AlignVCenter)
 
         layout.addStretch(1)
 
-        # Right Side Inputs (Sample ID & Browse)
-        self.sample_lbl = QLabel("Sample ID:")
-        self.sample_lbl.setObjectName("DimLabel")
-        layout.addWidget(self.sample_lbl)
+        self._about_btn = QPushButton("\u24d8 About")
+        self._about_btn.setObjectName("AboutButton")
+        self._about_btn.clicked.connect(self._on_about_clicked)
+        layout.addWidget(self._about_btn, 0, Qt.AlignVCenter)
 
-        self.sample_id_field = QLineEdit("Sample_Batch_01")
-        self.sample_id_field.setMinimumWidth(220)
-        self.sample_id_field.setMaximumWidth(340)
-        self.sample_id_field.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
-        self.sample_id_field.setMinimumHeight(32)
-        layout.addWidget(self.sample_id_field)
+        self._theme_btn = QPushButton()
+        self._theme_btn.setObjectName("ThemeButton")
+        self._theme_btn.clicked.connect(self._on_action_btn_clicked)
+        layout.addWidget(self._theme_btn, 0, Qt.AlignVCenter)
+        self._refresh_action_btn()
 
-        self.browse_dir_btn = QPushButton("Browse...")
-        self.browse_dir_btn.setObjectName("PrimaryButton")
-        self.browse_dir_btn.setMinimumHeight(32)
-        self.browse_dir_btn.clicked.connect(self.browse_clicked.emit)
-        layout.addWidget(self.browse_dir_btn)
+        set_status_led(self._keithley_led, self._keithley_lbl, "idle")
+        set_status_led(self._relay_led, self._relay_lbl, "idle")
 
-        # Theme Toggle
-        self.theme_btn = QPushButton("\u2600\ufe0f" if self.is_dark_mode else "\U0001F319")
-        self.theme_btn.setObjectName("ThemeButton")
-        self.theme_btn.setFixedSize(36, 36)
-        self.theme_btn.setCursor(Qt.PointingHandCursor)
-        self.theme_btn.clicked.connect(self.theme_toggled.emit)
-        layout.addWidget(self.theme_btn)
+        self._widget = container
+        return container
 
-    # --- Public API for controllers ---
+    def _on_connect_clicked(self):
+        self.connect_clicked = True
 
-    def sample_name(self):
-        return self.sample_id_field.text().strip()
+    def _on_about_clicked(self):
+        self.about_clicked = True
+
+    def _on_action_btn_clicked(self):
+        # One button, two identities: home glyph + `home_clicked` while a
+        # workspace is open, theme glyph + `theme_toggled` on the Home screen.
+        if self._in_workspace:
+            self.home_clicked = True
+        else:
+            self.theme_toggled = True
+
+    def _refresh_action_btn(self):
+        if self._in_workspace:
+            self._theme_btn.setText("\U0001F3E0")  # house
+        else:
+            self._theme_btn.setText("\u2600\ufe0f" if self.is_dark_mode else "\U0001F319")
+
+    @staticmethod
+    def _repolish(widget):
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
+    # --- Public API (unchanged names/signatures from the old QFrame/enaml versions) ---
+
+    def set_workspace_mode(self, in_workspace):
+        """Switches the action button between theme-toggle (Home) and
+        back-to-home (Workspace) identities. The About trigger is a
+        Home-only affordance, so it hides while a workspace is open."""
+        self._in_workspace = in_workspace
+        self._about_btn.setVisible(not in_workspace)
+        self._refresh_action_btn()
+
+    def set_mode(self, mode, colors):
+        """Swaps the brand title to the active mode's name/color (e.g.
+        'SPO' in green). Pass mode=None to restore the default brand."""
+        self._active_mode = mode
+        if mode is None:
+            self._brand_title.setText(BRAND_TITLE)
+            self._brand_title.setStyleSheet("")
+        else:
+            self._brand_title.setText(MODE_LABELS.get(mode, BRAND_TITLE))
+            self._brand_title.setStyleSheet(f"color: {get_mode_accent(colors, mode)};")
 
     def set_connection_status(self, keithley_ok, relay_ok, colors):
-        set_status_led(self.keithley_led, self.keithley_lbl, "ok" if keithley_ok else "bad")
-        set_status_led(self.relay_led, self.relay_lbl, "ok" if relay_ok else "bad")
-        refresh_led_glow(self.keithley_led, colors)
-        refresh_led_glow(self.relay_led, colors)
-        self.connect_btn.setText("Reconnect")
+        set_status_led(self._keithley_led, self._keithley_lbl, "ok" if keithley_ok else "bad")
+        set_status_led(self._relay_led, self._relay_lbl, "ok" if relay_ok else "bad")
+        refresh_led_glow(self._keithley_led, colors)
+        refresh_led_glow(self._relay_led, colors)
+        self._connect_btn.setText("Reconnect")
 
     def set_running(self, running):
-        self.connect_btn.setEnabled(not running)
-        self.browse_dir_btn.setEnabled(not running)
+        self._connect_btn.setEnabled(not running)
+
+    def flash_home_alert(self):
+        """Brief red blink on the home/theme button -- used when the user
+        tries to leave a mode while it has an active sweep running."""
+        self._set_flashing(True)
+        QTimer.singleShot(180, lambda: self._set_flashing(False))
+        QTimer.singleShot(360, lambda: self._set_flashing(True))
+        QTimer.singleShot(540, lambda: self._set_flashing(False))
+
+    def _set_flashing(self, on):
+        self._theme_btn.setProperty("flashing", "true" if on else "false")
+        self._repolish(self._theme_btn)
 
     def apply_theme(self, colors, is_dark_mode):
         self.is_dark_mode = is_dark_mode
-        self.theme_btn.setText("\u2600\ufe0f" if is_dark_mode else "\U0001F319")
-        for w in (self.keithley_led, self.keithley_lbl, self.relay_led, self.relay_lbl):
-            w.style().unpolish(w)
-            w.style().polish(w)
-        refresh_led_glow(self.keithley_led, colors)
-        refresh_led_glow(self.relay_led, colors)
+        self._refresh_action_btn()
+        refresh_led_glow(self._keithley_led, colors)
+        refresh_led_glow(self._relay_led, colors)
+        # Re-apply the active mode's brand color so it stays correct
+        # (light vs dark hex differ) across a theme toggle.
+        self.set_mode(self._active_mode, colors)

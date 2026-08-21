@@ -4,6 +4,7 @@ control, and point-by-point sweep reads.
 """
 import time
 
+import numpy as np
 import pyvisa
 
 KEITHLEY_SAFE_VOLTAGE = 0.0
@@ -171,3 +172,162 @@ def keithley_read_current(k, device_voltage, point_delay_s):
     k.write(":READ?")
     raw = k.read().strip()
     return parse_keithley_current(raw), raw, keithley_voltage
+
+
+# --- DIT (Dark Injection Transient): fast timed-current trace-buffer sweeps ---
+
+def keithley_configure_timed_current(
+    k,
+    integration_time_ms,
+    sense_range="AUTO",
+    four_wire=True,
+    autozero=False,
+    terminals="FRONT",
+    line_frequency_hz=60.0,
+):
+    nplc = min(10.0, max(0.01, float(integration_time_ms) * float(line_frequency_hz) / 1000.0))
+    k.write(f"ROUT:TERM {terminals}")
+    k.write("SENS:FUNC 'CURR'")
+    k.write(f"SENS:CURR:NPLC {nplc:.6g}")
+    k.write(f"SYST:AZER {'ON' if autozero else 'OFF'}")
+    if str(sense_range).upper() == "AUTO":
+        k.write("SENS:CURR:RANG:AUTO ON")
+    else:
+        k.write("SENS:CURR:RANG:AUTO OFF")
+        k.write(f"SENS:CURR:RANG {sense_range}")
+    k.write(f"SENS:CURR:RSEN {'ON' if four_wire else 'OFF'}")
+    k.write("SOUR:FUNC VOLT")
+    k.write("SOUR:VOLT:READ:BACK ON")
+    k.write("OUTP:VOLT:SMOD HIMP")
+
+
+def _chunk_sequences(values, max_points_per_chunk):
+    if max_points_per_chunk <= 0:
+        raise ValueError("Chunk size must be greater than 0.")
+    values = np.asarray(values, dtype=float)
+    return [values[i:i + max_points_per_chunk] for i in range(0, values.size, max_points_per_chunk)]
+
+
+def keithley_run_voltage_program(k, device_voltages, source_delay_s, max_points_per_chunk=500, progress=None):
+    chunks = _chunk_sequences(device_voltages, int(max_points_per_chunk))
+    time_fragments = []
+    voltage_fragments = []
+    current_fragments = []
+    cursor = 0.0
+    buffer_name = '"defbuffer1"'
+
+    for chunk in chunks:
+        points = int(chunk.size)
+        source_chunk = keithley_voltage_for_device_voltage(chunk)
+        k.write(f"TRAC:CLE {buffer_name}")
+        k.write(
+            f"SOUR:SWE:VOLT:LIN {source_chunk[0]:.9g},{source_chunk[-1]:.9g},"
+            f"{points},{source_delay_s:.9g}"
+        )
+        k.write("INIT")
+        k.write("*WAI")
+        raw = k.query_ascii_values(
+            f"TRAC:DATA? 1,{points},{buffer_name},REL,SOUR,READ,STAT,SOURSTAT"
+        )
+
+        values = np.asarray(raw, dtype=float)
+        if values.size == points * 5:
+            trace = values.reshape(-1, 5)
+            measured_t = trace[:, 0]
+            measured_t = measured_t - measured_t[0] + cursor
+            measured_v = keithley_voltage_for_device_voltage(trace[:, 1])
+            current_a = trace[:, 2]
+            cursor = float(measured_t[-1] + max(source_delay_s, 1e-6))
+        elif values.size == points * 2:
+            trace = values.reshape(-1, 2)
+            measured_v = keithley_voltage_for_device_voltage(trace[:, 0])
+            current_a = trace[:, 1]
+            measured_t = cursor + np.arange(points, dtype=float) * max(source_delay_s, 1e-6)
+            cursor = float(measured_t[-1] + max(source_delay_s, 1e-6))
+        else:
+            raise RuntimeError(f"Expected {points} trace points; instrument returned {values.size} values.")
+
+        time_fragments.append(measured_t)
+        voltage_fragments.append(measured_v)
+        current_fragments.append(current_a)
+        if progress is not None:
+            progress(measured_t.copy(), measured_v.copy(), current_a.copy())
+
+    if not time_fragments:
+        return np.array([]), np.array([]), np.array([])
+    return np.concatenate(time_fragments), np.concatenate(voltage_fragments), np.concatenate(current_fragments)
+
+
+def keithley_dit_voltage_step(
+    k,
+    v1_v,
+    v2_v,
+    hold_v1_s,
+    hold_v2_s,
+    trigger_delay_ms,
+    integration_time_ms,
+    current_limit_a,
+    sense_range="AUTO",
+    delay_fudge_ms=0.01,
+    max_points_per_chunk=500,
+    four_wire=True,
+    autozero=False,
+    repetitions=1,
+    recovery_s=1.0,
+    progress=None,
+):
+    if current_limit_a <= 0:
+        raise ValueError("DIT current limit must be greater than 0 A.")
+    sample_interval_s = max(1e-6, (trigger_delay_ms + integration_time_ms + delay_fudge_ms) / 1000.0)
+    n1 = max(1, int(round(hold_v1_s / sample_interval_s)))
+    n2 = max(1, int(round(hold_v2_s / sample_interval_s)))
+    recovery_points = max(1, int(round(recovery_s / sample_interval_s)))
+
+    sequences = []
+    for repeat in range(int(repetitions)):
+        sequences.extend(
+            [
+                np.full(n1, float(v1_v), dtype=float),
+                np.array([float(v1_v), float(v2_v)], dtype=float),
+                np.full(n2, float(v2_v), dtype=float),
+            ]
+        )
+        if repeat < int(repetitions) - 1 and recovery_s > 0:
+            sequences.append(np.full(recovery_points, float(v1_v), dtype=float))
+
+    try:
+        k.write("*RST")
+        k.write("*CLS")
+        keithley_configure_timed_current(
+            k,
+            integration_time_ms=integration_time_ms,
+            sense_range=sense_range,
+            four_wire=four_wire,
+            autozero=autozero,
+        )
+        k.write(f"SOUR:VOLT:RANG {max(abs(v1_v), abs(v2_v), 0.2):.9g}")
+        k.write(f"SOUR:VOLT:ILIM {current_limit_a:.9g}")
+        k.write(f":SOUR:VOLT:LEV {keithley_voltage_for_device_voltage(v1_v):.9g}")
+        keithley_output_enable(k)
+
+        all_t = []
+        all_v = []
+        all_i = []
+        cursor = 0.0
+        source_delay_s = max(0.0, (trigger_delay_ms + delay_fudge_ms) / 1000.0)
+        for sequence in sequences:
+            t, v, i = keithley_run_voltage_program(
+                k,
+                sequence,
+                source_delay_s,
+                max_points_per_chunk=max_points_per_chunk,
+                progress=progress,
+            )
+            all_t.append(t + cursor)
+            all_v.append(v)
+            all_i.append(i)
+            cursor = float(all_t[-1][-1] + max(sample_interval_s, 1e-6))
+
+        return np.concatenate(all_t), np.concatenate(all_v), np.concatenate(all_i)
+    finally:
+        keithley_output_safe(k)

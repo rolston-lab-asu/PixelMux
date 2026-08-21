@@ -6,8 +6,8 @@ right-click range dialog.
 This module only interacts with PyQt/pyqtgraph, only focusing on rendering
 curves.
 """
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import QDialog, QFormLayout, QDialogButtonBox
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QDialog, QFormLayout, QDialogButtonBox
 import pyqtgraph as pg
 
 from gui.custom_widgets import NoWheelViewBox, NoWheelDoubleSpinBox
@@ -35,17 +35,20 @@ class PlotManager:
     and calls through this object for anything plot-related.
     """
 
-    def __init__(self, range_dialog_callback=None):
+    def __init__(self, range_dialog_callback=None,
+                 x_label="Voltage", x_units="V",
+                 y_label="Current Density", y_units="mA/cm\u00b2",
+                 default_x_range=(0, 1.3), default_y_range=(0, 26)):
         self.plot = pg.PlotWidget(viewBox=NoWheelViewBox(range_dialog_callback))
-        self.plot.setBackground("#ffffff")
         self.plot.showGrid(x=True, y=True, alpha=0.22)
-        self.plot.setLabel("bottom", "Voltage", units="V")
-        self.plot.setLabel("left", "Current Density", units="mA/cm\u00b2")
+        self.plot.setLabel("bottom", x_label, units=x_units)
+        self.plot.setLabel("left", y_label, units=y_units)
         self.plot.setMinimumHeight(300)
-        self.plot.getAxis("bottom").setPen(pg.mkPen("#52606d"))
-        self.plot.getAxis("left").setPen(pg.mkPen("#52606d"))
-        self.plot.getAxis("bottom").setTextPen(pg.mkPen("#334e68"))
-        self.plot.getAxis("left").setTextPen(pg.mkPen("#334e68"))
+
+        self._x_label, self._x_units = x_label, x_units
+        self._y_label, self._y_units = y_label, y_units
+        self._default_x_range = default_x_range
+        self._default_y_range = default_y_range
 
         self.pixel_legend = None
         self.loop_legend = None
@@ -57,8 +60,13 @@ class PlotManager:
 
     def apply_default_range(self):
         self.plot.enableAutoRange(x=False, y=False)
-        self.plot.setXRange(0, 1.3, padding=0)
-        self.plot.setYRange(0, 26, padding=0)
+        self.plot.setXRange(*self._default_x_range, padding=0)
+        self.plot.setYRange(*self._default_y_range, padding=0)
+
+    def enable_autorange(self):
+        """DIT-only: signal magnitude/timescale varies too much between
+        runs for a fixed default range to be useful, unlike JV/SPO."""
+        self.plot.enableAutoRange(x=True, y=True)
 
     def clear_curves(self):
         self.plot.clear()
@@ -84,7 +92,15 @@ class PlotManager:
         return self.loop_pen(loop_number, color=self.pixel_color(channel), width=2)
 
     def plot_curve(self, V, J, channel, loop_number):
-        self.plot.plot(V, J, pen=self.curve_pen(channel, loop_number))
+        return self.plot.plot(V, J, pen=self.curve_pen(channel, loop_number))
+
+    def set_y_axis(self, label, units, default_range):
+        """Switches what the y-axis represents (e.g. Power Density <-> Voltage)
+        and what range 'Reset View'/apply_default_range() returns to."""
+        self._y_label, self._y_units = label, units
+        self._default_y_range = default_range
+        self.plot.setLabel("left", label, units=units)
+        self.plot.setYRange(*default_range, padding=0)
 
     def _remove_legend(self, legend):
         if legend is None:
@@ -157,17 +173,17 @@ class PlotManager:
         y_max.setDecimals(4)
         y_max.setValue(y_max_current)
 
-        form.addRow("Voltage min (V)", x_min)
-        form.addRow("Voltage max (V)", x_max)
-        form.addRow("J min (mA/cm\u00b2)", y_min)
-        form.addRow("J max (mA/cm\u00b2)", y_max)
+        form.addRow(f"{self._x_label} min ({self._x_units})", x_min)
+        form.addRow(f"{self._x_label} max ({self._x_units})", x_max)
+        form.addRow(f"{self._y_label} min ({self._y_units})", y_min)
+        form.addRow(f"{self._y_label} max ({self._y_units})", y_max)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
 
-        if dialog.exec_() == QDialog.Accepted:
+        if dialog.exec() == QDialog.Accepted:
             if x_max.value() <= x_min.value() or y_max.value() <= y_min.value():
                 log_callback("ERROR: plot range maximum must be greater than minimum")
                 return

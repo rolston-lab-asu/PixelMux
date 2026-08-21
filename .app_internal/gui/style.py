@@ -11,14 +11,22 @@ THEME_COLORS = {
         "accent_hover": "#0369a1",
         "accent_text_on": "#ffffff",
         "success": "#10b981",
+        "success_hover": "#059669",
+        "success_text_on": "#ffffff",
         "error": "#ef4444",
         "warning": "#f59e0b",
+        "warning_hover": "#d97706",
+        "warning_text_on": "#1f2933",
+        "warning_bg": "rgba(245, 158, 11, 0.08)",
         "text_main": "#1f2933",
         "text_dim": "#64748b",
         "border": "#cbd5e1",
         "row_hover": "rgba(0, 0, 0, 0.03)",
         "alt_row": "#eef2f6",
         "card_bg": "#eef1f5",
+        "glass": "rgba(0, 0, 0, 0.03)",
+        "glass_border": "rgba(0, 0, 0, 0.15)",
+        "accent_glow": "rgba(2, 132, 199, 0.15)",
     },
     True: {  # Dark mode
         "bg_base": "#0b1120",
@@ -28,20 +36,39 @@ THEME_COLORS = {
         "accent_hover": "#0284c7",
         "accent_text_on": "#0b1120",
         "success": "#10b981",
+        "success_hover": "#059669",
+        "success_text_on": "#0b1120",
         "error": "#ef4444",
         "warning": "#f59e0b",
+        "warning_hover": "#d97706",
+        "warning_text_on": "#0b1120",
+        "warning_bg": "rgba(250, 204, 21, 0.06)",
         "text_main": "#f8fafc",
         "text_dim": "#94a3b8",
         "border": "#334155",
         "row_hover": "rgba(255, 255, 255, 0.03)",
         "alt_row": "#141c2e",
         "card_bg": "#0f172a",
+        "glass": "rgba(255, 255, 255, 0.04)",
+        "glass_border": "rgba(255, 255, 255, 0.15)",
+        "accent_glow": "rgba(56, 189, 248, 0.15)",
     },
 }
 
 def get_theme_colors(dark_mode=False):
     """Returns the color-token dict for the active theme."""
     return THEME_COLORS[bool(dark_mode)]
+
+
+# Which theme-color token identifies each mode. JV keeps the app's default
+# accent. Temporary but functional
+MODE_ACCENT_KEYS = {"jv": "accent", "spo": "success", "dit": "warning"}
+
+
+def get_mode_accent(colors, mode):
+    """Returns the hex/rgba color string this mode should use in place of
+    the default accent, given a color-token dict from get_theme_colors()."""
+    return colors[MODE_ACCENT_KEYS.get(mode, "accent")]
 
 
 def _build_theme(c):
@@ -51,6 +78,8 @@ def _build_theme(c):
     QWidget {{
         background-color: {c['bg_base']};
         color: {c['text_main']};
+        font-family: 'Segoe UI';
+        font-size: 10pt;
     }}
 
     QTabWidget::pane {{ border: none; }}
@@ -71,6 +100,20 @@ def _build_theme(c):
         color: {c['accent']};
         border-bottom: 3px solid {c['accent']};
         background: rgba(2, 132, 199, 0.08);
+    }}
+
+    /* Per-mode tab underline: SPO and DIT workspaces tag their own tab
+       strip with an objectName so the selected-tab color matches the
+       mode's identity color instead of the app-wide accent. */
+    QTabWidget#SPOTabs QTabBar::tab:selected {{
+        color: {c['success']};
+        border-bottom: 3px solid {c['success']};
+        background: rgba(16, 185, 129, 0.08);
+    }}
+    QTabWidget#DITTabs QTabBar::tab:selected {{
+        color: {c['warning']};
+        border-bottom: 3px solid {c['warning']};
+        background: rgba(245, 158, 11, 0.08);
     }}
 
     QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{
@@ -102,6 +145,11 @@ def _build_theme(c):
         border: none;
     }}
     QPushButton#PrimaryButton:hover {{ background-color: {c['accent_hover']}; }}
+    QPushButton#PrimaryButton[alert="true"] {{
+        background-color: {c['error']};
+        color: white;
+    }}
+    QPushButton#PrimaryButton[alert="true"]:hover {{ background-color: #dc2626; }}
 
     QPushButton#DangerButton {{
         background-color: {c['error']};
@@ -122,6 +170,11 @@ def _build_theme(c):
         border: 1px solid {c['border']};
     }}
     QPushButton#ThemeButton:hover {{ background-color: {c['border']}; }}
+    QPushButton#ThemeButton[flashing="true"] {{
+        background-color: {c['error']};
+        border-color: {c['error']};
+    }}
+    QPushButton#ThemeButton[flashing="true"]:hover {{ background-color: #dc2626; }}
 
     QProgressBar {{
         border-radius: 4px;
@@ -186,7 +239,7 @@ def _build_theme(c):
     QLabel#BrandTitle {{
         color: {c['accent']};
         font-weight: 850;
-        font-size: 14pt;
+        font-size: 12pt;
         letter-spacing: 1px;
     }}
     QLabel#PanelTitle {{
@@ -209,6 +262,11 @@ def _build_theme(c):
         color: {c['text_dim']};
         font-weight: 600;
     }}
+    QLabel#FieldLabel {{
+        color: {c['text_dim']};
+        font-weight: 600;
+        font-size: 8pt;
+    }}
     QLabel#MainLabel {{
         color: {c['text_main']};
         font-weight: bold;
@@ -217,6 +275,53 @@ def _build_theme(c):
         color: {c['accent']};
         font-weight: 800;
         font-size: 15px;
+    }}
+
+    /* Per-mode title/header color: SPO and DIT workspaces tag their tab
+       strip with an objectName so panel titles, table headers, sweep-tab
+       HUD/metric labels, etc. */
+    QTabWidget#SPOTabs QLabel#PanelTitle,
+    QTabWidget#SPOTabs QLabel#PanelTitleLarge,
+    QTabWidget#SPOTabs QLabel#AccentLabel,
+    QTabWidget#SPOTabs QLabel#HudActivePixel,
+    QTabWidget#SPOTabs QLabel#MetricLabel,
+    QTabWidget#SPOTabs QLabel#InspectorTitle,
+    QTabWidget#SPOTabs QHeaderView::section {{
+        color: {c['success']};
+    }}
+    QTabWidget#DITTabs QLabel#PanelTitle,
+    QTabWidget#DITTabs QLabel#PanelTitleLarge,
+    QTabWidget#DITTabs QLabel#AccentLabel,
+    QTabWidget#DITTabs QLabel#HudActivePixel,
+    QTabWidget#DITTabs QLabel#MetricLabel,
+    QTabWidget#DITTabs QLabel#InspectorTitle,
+    QTabWidget#DITTabs QHeaderView::section {{
+        color: {c['warning']};
+    }}
+    QTabWidget#SPOTabs QPushButton#PrimaryButton {{
+        background-color: {c['success']};
+        color: {c['success_text_on']};
+    }}
+    QTabWidget#SPOTabs QPushButton#PrimaryButton:hover {{
+        background-color: {c['success_hover']};
+    }}
+    QTabWidget#DITTabs QPushButton#PrimaryButton {{
+        background-color: {c['warning']};
+        color: {c['warning_text_on']};
+    }}
+    QTabWidget#DITTabs QPushButton#PrimaryButton:hover {{
+        background-color: {c['warning_hover']};
+    }}
+    /* Preserve the red validation-error flash (alert=true) regardless of
+       mode color, since it must win over the SPO/DIT overrides above. */
+    QTabWidget#SPOTabs QPushButton#PrimaryButton[alert="true"],
+    QTabWidget#DITTabs QPushButton#PrimaryButton[alert="true"] {{
+        background-color: {c['error']};
+        color: white;
+    }}
+    QTabWidget#SPOTabs QPushButton#PrimaryButton[alert="true"]:hover,
+    QTabWidget#DITTabs QPushButton#PrimaryButton[alert="true"]:hover {{
+        background-color: #dc2626;
     }}
 
     /* Thin section divider, used under panel titles */
@@ -283,13 +388,13 @@ def _build_theme(c):
     }}
     QLabel#MetricLabel {{
         color: {c['accent']};
-        font-size: 24px;
+        font-size: 18px;
         font-weight: bold;
         letter-spacing: 1px;
     }}
     QLabel#MetricValue {{
         color: {c['text_main']};
-        font-size: 40px;
+        font-size: 24px;
         font-weight: 800;
         letter-spacing: -0.5px;
     }}
@@ -321,6 +426,130 @@ def _build_theme(c):
     QCheckBox::indicator:checked {{
         background-color: {c['accent']};
         border-color: {c['accent']};
+    }}
+
+    /* --- Auto-save path preview (dataset card) --- */
+    QLabel#PathPreview {{
+        font-family: Consolas, monospace;
+        font-size: 8pt;
+        color: {c['text_dim']};
+        background-color: {c['bg_input']};
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid {c['border']};
+    }}
+    QLabel#PathPreview[state="warning"] {{
+        border-color: {c['warning']};
+        background-color: {c['warning_bg']};
+        color: {c['text_main']};
+    }}
+    QFrame#DatasetCard {{
+        background-color: {c['card_bg']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+    }}
+
+    /* --- Home Screen: workflow module cards --- */
+    QFrame#HomeCard {{
+        border-radius: 10px;
+        border: 1px solid {c['border']};
+        border-left: 4px solid {c['text_dim']};
+        background-color: {c['bg_panel']};
+    }}
+    QFrame#HomeCard[category="jv"]  {{ border-left: 4px solid {c['accent']}; }}
+    QFrame#HomeCard[category="spo"] {{ border-left: 4px solid {c['success']}; }}
+    QFrame#HomeCard[category="dit"] {{ border-left: 4px solid {c['warning']}; }}
+    QFrame#HomeCard[state="enabled"]:hover {{ border-color: {c['accent']}; }}
+
+    QLabel#CardTag {{
+        font-size: 7.5pt;
+        font-weight: 800;
+        letter-spacing: 1px;
+        color: {c['text_dim']};
+    }}
+    QLabel#CardTag[category="jv"]  {{ color: {c['accent']}; }}
+    QLabel#CardTag[category="spo"] {{ color: {c['success']}; }}
+    QLabel#CardTag[category="dit"] {{ color: {c['warning']}; }}
+
+    QLabel#CardTitle {{
+        font-size: 13px;
+        font-weight: 800;
+        color: {c['text_main']};
+    }}
+    QLabel#CardDesc {{
+        font-size: 8.5pt;
+        color: {c['text_dim']};
+    }}
+
+    /* --- Substrate diagram --- */
+    QWidget#SubstrateRoot {{
+        background: transparent;
+    }}
+    QWidget#FieldBlock {{
+        background: transparent;
+    }}
+    QFrame#GlassSlide {{
+        background-color: {c['glass']};
+        border: 2px solid {c['glass_border']};
+        border-radius: 8px;
+    }}
+    QWidget#PadColumn {{
+        background: transparent;
+        border: none;
+    }}
+    QPushButton#PadBtn {{
+        border: 2px dashed {c['border']};
+        background-color: {c['bg_panel']};
+        color: {c['text_dim']};
+        font-weight: bold;
+        font-size: 9.5pt;
+        border-radius: 5px;
+        padding: 0px;
+    }}
+    QPushButton#PadBtn[state="active"] {{
+        border-style: solid;
+        border-color: {c['text_dim']};
+        background-color: {c['card_bg']};
+        color: {c['text_main']};
+    }}
+    QPushButton#PadBtn[state="selected"] {{
+        border-style: solid;
+        border-color: {c['accent']};
+        color: {c['accent']};
+    }}
+    QFrame#Trace {{
+        background-color: {c['border']};
+    }}
+    QFrame#Trace[state="active"] {{
+        background-color: {c['accent']};
+    }}
+    QFrame#PixelPad {{
+        background-color: {c['border']};
+        border-radius: 1px;
+    }}
+    QFrame#PixelPad[state="active"] {{
+        background-color: {c['accent']};
+    }}
+    QFrame#InspectorBar {{
+        background-color: {c['card_bg']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+    }}
+    QLabel#InspectorTitle {{
+        font-size: 8pt;
+        font-weight: bold;
+        color: {c['accent']};
+    }}
+    QPushButton#CloseInspectorBtn {{
+        background: none;
+        border: none;
+        color: {c['text_dim']};
+        font-size: 10pt;
+        font-weight: bold;
+        padding: 0px 4px;
+    }}
+    QPushButton#CloseInspectorBtn:hover {{
+        color: {c['error']};
     }}
 
     /* --- Scrollbar Thinners --- */

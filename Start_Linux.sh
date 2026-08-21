@@ -23,7 +23,7 @@ fi
 
 install() {
     echo "===================================================="
-    echo "Multiplex Solar Simulator - First-Time Setup"
+    echo "Pixel Mux - First-Time Setup"
     echo "===================================================="
     echo "This only happens once. Please wait..."
     echo ""
@@ -70,7 +70,7 @@ install() {
     echo "[INFO] Installing Python dependencies. This may take a few minutes..."
     pip install --upgrade pip -q
     if ! pip install -r "$REQ_FILE" -q; then
-        echo "[ERROR] Failed to install Python dependencies."
+        echo "[ERROR] Failed to install Python dependencies from $REQ_FILE."
         exit 1
     fi
 
@@ -163,11 +163,11 @@ elif command -v python &>/dev/null; then
 fi
 if [ -z "$PYEXE" ]; then
     echo "[ERROR] Python not found in the virtual environment."
-    echo "Delete the .venv folder and re-run this script."
+    echo "Delete the $VENV_DIR folder and re-run this script."
     exit 1
 fi
 
-echo "[INFO] Launching Multiplex Solar Simulator..."
+echo "[INFO] Launching Pixel Mux..."
 
 pushd "$APP_DIR" >/dev/null
 

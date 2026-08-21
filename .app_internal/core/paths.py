@@ -5,6 +5,7 @@ Everything that used to derive its save location from sys.argv[0] or the
 current working directory goes through here instead.
 """
 import os
+import sys
 
 # .app_internal/core/paths.py -> .app_internal/core -> .app_internal -> root
 _THIS_FILE = os.path.abspath(__file__)
@@ -13,7 +14,7 @@ _PROJECT_ROOT = os.path.dirname(_APP_INTERNAL_DIR)
 
 
 def get_project_root():
-    """Absolute path to the MultiplexSolarSim folder."""
+    """Absolute path to the project root folder (three levels up from this file)."""
     return _PROJECT_ROOT
 
 
@@ -32,3 +33,10 @@ def get_logs_dir():
     path = os.path.join(_PROJECT_ROOT, "logs")
     os.makedirs(path, exist_ok=True)
     return path
+
+
+def get_icon_path():
+    """Absolute path to the app icon: a multi-resolution .ico on Windows
+    & a single .png everywhere else (Linux/macOS)."""
+    filename = "app_icon.ico" if sys.platform == "win32" else "app_icon.png"
+    return os.path.join(_APP_INTERNAL_DIR, "assets", "icons", filename)
