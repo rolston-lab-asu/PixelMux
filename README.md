@@ -1,6 +1,6 @@
 # Pixel Mux v2.0.0 Beta
 
-**[Overview](README.md)** | **[Setup & Deployment Guide](DEPLOYMENT.md)** | **[Troubleshooting](DEPLOYMENT.md#troubleshooting-checklist)** | **[Changelog](CHANGELOG.md)**
+**[Overview](README.md)** | **[Setup & Deployment Guide](DEPLOYMENT.md)** | **[Troubleshooting](DEPLOYMENT.md#troubleshooting-checklist)**
 ___
 
 <p align="center">
