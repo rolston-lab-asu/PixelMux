@@ -1,8 +1,4 @@
-"""
-Connects instruments (updates the header LEDs) and chooses the shared
-output directory (updates the log panel's display and hands the new path
-to every mode controller that exports files).
-"""
+"""Connects the instruments and applies the chosen output folder to every mode."""
 from PySide6.QtCore import QObject
 from PySide6.QtWidgets import QFileDialog
 
@@ -12,24 +8,20 @@ class MainController(QObject):
         super().__init__(parent)
         self.inst = instrument_manager
         self.header = header_panel
-        self.log_panel = log_panel  # first-registered log panel, kept for interface compatibility
+        self.log_panel = log_panel
         self.log_panels = [log_panel]
         self.get_colors = get_colors
         self.parent_widget = parent_widget
 
         self.output_dir = log_panel.output_dir
-        self._mode_controllers = []  # anything with a set_output_dir(path) method
+        self._mode_controllers = []
 
         self.header.observe("connect_clicked", self._on_connect_clicked)
 
     def register_mode_controller(self, controller):
-        """Mode controllers (JVController, SPOController, etc.)
-        register here so a directory change propagates to their exporters."""
         self._mode_controllers.append(controller)
 
     def register_log_panel(self, log_panel):
-        """Every mode's own Logs tab registers here so connect/disconnect
-        and output-dir messages show up no matter which mode is open."""
         self.log_panels.append(log_panel)
 
     def _log_all(self, message):

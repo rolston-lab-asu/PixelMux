@@ -1,13 +1,9 @@
-"""
-Tests for --mock dev mode: mock instrument drivers + InstrumentManager's
-mock branch.
-"""
+"""Tests for the mock instruments and InstrumentManager."""
 import numpy as np
-import pytest
 
-from core.instrument_manager import InstrumentManager
+from core.instrument_manager import InstrumentManager, make_safe
 from core.pv_math import full_iv_report
-from instruments.keithley2460 import keithley_read_current
+from instruments.keithley2460 import keithley_read_current, keithley_dit_voltage_step
 from instruments.mock_keithley import MockKeithley
 from instruments.mock_relay import MockRelay
 
@@ -25,7 +21,6 @@ def test_mock_keithley_produces_a_realistic_curve():
     V, I = _sweep_mock_keithley(MockKeithley(seed=42))
     report = full_iv_report(V, I, area_cm2=0.0396, pin_mw_cm2=100, fit_resistances=False)
 
-    # Real crystalline-silicon-ish test cell ranges.
     assert 0.3 < report["Voc"] < 0.9
     assert 5 < report["Jsc"] < 50
     assert 0.4 < report["FF"] < 0.9
@@ -41,7 +36,7 @@ def test_mock_keithley_output_off_reads_zero():
 
 
 def test_mock_keithley_respects_compliance_limit():
-    k = MockKeithley(iph=10.0, seed=1)  # absurdly high Iph to force compliance clamp
+    k = MockKeithley(iph=10.0, seed=1)
     k.write("*RST")
     k.write(":SOUR:VOLT:ILIM 0.05")
     k.write(":OUTPut:STATe ON")
@@ -77,7 +72,7 @@ def test_mock_relay_on_off_individual_channel():
 
 def test_mock_relay_hex_channel_token():
     r = MockRelay()
-    r.write(b"relay on A\r")  # channel 10
+    r.write(b"relay on A\r")
     r.write(b"relay readall\r")
     state = int(r.read(64).strip(), 16)
     assert state & (1 << 10)
@@ -96,7 +91,6 @@ def test_instrument_manager_mock_mode_connects_without_hardware():
 
 
 def test_instrument_manager_real_mode_unaffected(monkeypatch):
-    """mock=False must still take the real hardware-search path."""
     import core.instrument_manager as im
 
     monkeypatch.setattr(im, "find_keithley", lambda logger=None: (_ for _ in ()).throw(RuntimeError("no hw")))
@@ -106,3 +100,39 @@ def test_instrument_manager_real_mode_unaffected(monkeypatch):
     keithley_ok, relay_ok = mgr.connect_all()
     assert keithley_ok is False
     assert relay_ok is False
+
+
+def test_make_safe_opens_relays_even_if_keithley_fails():
+    class DeadKeithley:
+        def write(self, command):
+            raise RuntimeError("USB gone")
+
+    relay = MockRelay()
+    relay._state = 0b101
+    logs = []
+    make_safe(DeadKeithley(), relay, logs.append)
+
+    assert relay._state == 0
+    assert any("Keithley" in line for line in logs)
+
+
+def test_reconnect_closes_previous_handles():
+    mgr = InstrumentManager(mock=True)
+    mgr.connect_all()
+    closed = []
+    mgr.keithley.close = lambda: closed.append("keithley")
+    mgr.relay.close = lambda: closed.append("relay")
+
+    mgr.connect_all()
+    assert closed == ["keithley", "relay"]
+
+
+def test_dit_step_stops_on_request_and_leaves_output_off():
+    k = MockKeithley(seed=0)
+    t, v, i = keithley_dit_voltage_step(
+        k, v1_v=0.0, v2_v=1.0, hold_v1_s=0.05, hold_v2_s=0.05,
+        trigger_delay_ms=1.0, integration_time_ms=1.0, current_limit_a=0.01,
+        should_stop=lambda: True,
+    )
+    assert t.size == v.size == i.size == 0
+    assert k._output_on is False

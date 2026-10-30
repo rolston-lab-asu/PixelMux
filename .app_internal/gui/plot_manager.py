@@ -1,11 +1,4 @@
-"""
-Encapsulates the pyqtgraph side of the IV plot: axis setup, per-pixel and
-per-loop pen styling, the dual pixel/loop legend system, and the
-right-click range dialog.
-
-This module only interacts with PyQt/pyqtgraph, only focusing on rendering
-curves.
-"""
+"""pyqtgraph setup for the IV plot: axes, pen styles, legends, and the range dialog."""
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QFormLayout, QDialogButtonBox
 import pyqtgraph as pg
@@ -18,11 +11,11 @@ PIXEL_COLORS = [
 ]
 
 LOOP_DASH_PATTERNS = [
-    None,                       # Loop 1: solid
-    [7, 4],                     # Loop 2: dashed
-    [1, 3],                     # Loop 3: dotted
-    [7, 3, 1.5, 3, 7, 5],       # Loop 4: dash-dot-dash
-    [7, 3, 1.5, 3, 1.5, 5],     # Loop 5: dash-dot-dot
+    None,
+    [7, 4],
+    [1, 3],
+    [7, 3, 1.5, 3, 7, 5],
+    [7, 3, 1.5, 3, 1.5, 5],
     [12, 4],
     [4, 3],
     [10, 3, 3, 3],
@@ -30,11 +23,6 @@ LOOP_DASH_PATTERNS = [
 
 
 class PlotManager:
-    """
-    The GUI creates one of these, adds `plot_manager.widget` to its layout,
-    and calls through this object for anything plot-related.
-    """
-
     def __init__(self, range_dialog_callback=None,
                  x_label="Voltage", x_units="V",
                  y_label="Current Density", y_units="mA/cm\u00b2",
@@ -64,8 +52,6 @@ class PlotManager:
         self.plot.setYRange(*self._default_y_range, padding=0)
 
     def enable_autorange(self):
-        """DIT-only: signal magnitude/timescale varies too much between
-        runs for a fixed default range to be useful, unlike JV/SPO."""
         self.plot.enableAutoRange(x=True, y=True)
 
     def clear_curves(self):
@@ -95,8 +81,6 @@ class PlotManager:
         return self.plot.plot(V, J, pen=self.curve_pen(channel, loop_number))
 
     def set_y_axis(self, label, units, default_range):
-        """Switches what the y-axis represents (e.g. Power Density <-> Voltage)
-        and what range 'Reset View'/apply_default_range() returns to."""
         self._y_label, self._y_units = label, units
         self._default_y_range = default_range
         self.plot.setLabel("left", label, units=units)

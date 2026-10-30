@@ -1,19 +1,10 @@
-"""
-Small, generic Qt visual-craft helpers w/o business-logic dependency.
-Any panel can call these.
-"""
-from PySide6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QAbstractAnimation
+"""Shared Qt visual helpers such as panel shadows."""
+from PySide6.QtCore import QPropertyAnimation, QEasingCurve, QAbstractAnimation
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QGraphicsDropShadowEffect, QGraphicsOpacityEffect
 
 
 def set_glow(widget, color_hex, enabled, blur_radius=10):
-    """Centered glow (no offset), toggled on/off -- Qt QSS has no
-    box-shadow equivalent, so the mockup's `.trace.active`/`.pixel-pad.active`
-    glow needs a real QGraphicsEffect instead of a QSS rule. Safe to call
-    repeatedly (e.g. every time a pin's active state toggles): creates the
-    effect once, then just flips visibility after that.
-    """
     effect = widget.graphicsEffect()
     if not isinstance(effect, QGraphicsDropShadowEffect):
         effect = QGraphicsDropShadowEffect(widget)
@@ -27,11 +18,6 @@ def set_glow(widget, color_hex, enabled, blur_radius=10):
 
 
 def make_panel_shadow(widget, is_dark_mode=False):
-    """Aesthetic choice that adds a shadow for more eye juicing.
-
-    Returns the effect so the caller can keep a reference and later call
-    `update_shadow_color()` on it when the theme changes.
-    """
     effect = QGraphicsDropShadowEffect(widget)
     effect.setBlurRadius(20)
     effect.setXOffset(0)
@@ -47,7 +33,6 @@ def update_shadow_color(effect, is_dark_mode):
 
 
 def refresh_led_glow(led, colors):
-    """LED glower, similar to the shadow function above; purely visual."""
     state = led.property("status")
     glow_color = {"ok": colors["success"], "bad": colors["error"]}.get(state)
 
@@ -65,11 +50,9 @@ def refresh_led_glow(led, colors):
 
 
 def set_status_led(led, label, state):
-    """Updates the status property of an LED + its label and repolishes them."""
     led.setProperty("status", state)
     label.setProperty("status", state)
 
-    # Force Qt to reload stylesheet
     led.style().unpolish(led)
     led.style().polish(led)
     label.style().unpolish(label)
@@ -77,7 +60,6 @@ def set_status_led(led, label, state):
 
 
 def animate_tab_switch(tabs, index, anim_owner):
-    """Fades the newly-selected tab's content in."""
     widget = tabs.widget(index)
     if widget is None:
         return None

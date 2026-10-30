@@ -1,9 +1,7 @@
-"""
-Qt stylesheets (QSS) supporting Light and Dark modes.
-"""
+"""Light and dark Qt stylesheets and theme colors."""
 
 THEME_COLORS = {
-    False: {  # Light mode
+    False: {
         "bg_base": "#f4f6f8",
         "bg_panel": "#ffffff",
         "bg_input": "#ffffff",
@@ -28,7 +26,7 @@ THEME_COLORS = {
         "glass_border": "rgba(0, 0, 0, 0.15)",
         "accent_glow": "rgba(2, 132, 199, 0.15)",
     },
-    True: {  # Dark mode
+    True: {
         "bg_base": "#0b1120",
         "bg_panel": "#1e293b",
         "bg_input": "#0b1120",
@@ -56,23 +54,17 @@ THEME_COLORS = {
 }
 
 def get_theme_colors(dark_mode=False):
-    """Returns the color-token dict for the active theme."""
     return THEME_COLORS[bool(dark_mode)]
 
 
-# Which theme-color token identifies each mode. JV keeps the app's default
-# accent. Temporary but functional
 MODE_ACCENT_KEYS = {"jv": "accent", "spo": "success", "dit": "warning"}
 
 
 def get_mode_accent(colors, mode):
-    """Returns the hex/rgba color string this mode should use in place of
-    the default accent, given a color-token dict from get_theme_colors()."""
     return colors[MODE_ACCENT_KEYS.get(mode, "accent")]
 
 
 def _build_theme(c):
-    """Builds the full QSS string from a color-token dict."""
     return f"""
     /* --- Base Structure --- */
     QWidget {{

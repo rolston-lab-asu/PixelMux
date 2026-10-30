@@ -1,11 +1,11 @@
-# Pixel Mux v2.0.0 Beta
+# Pixel Mux v2.1.0
 
 **[Overview](README.md)** | **[Setup & Deployment Guide](DEPLOYMENT.md)** | **[Troubleshooting](DEPLOYMENT.md#troubleshooting-checklist)**
 ___
 
 <p align="center">
   <a href="https://github.com/rolston-lab-asu/PixelMux/releases/latest">
-    <img src="https://img.shields.io/github/v/release/rolston-lab-asu/PixelMux?include_prereleases&label=Download%20Beta&logo=github&style=for-the-badge&color=blue" alt="Download">
+    <img src="https://img.shields.io/github/v/release/rolston-lab-asu/PixelMux?label=Download&logo=github&style=for-the-badge&color=blue" alt="Download">
   </a>
   <img src="https://img.shields.io/github/license/rolston-lab-asu/PixelMux?style=for-the-badge&color=orange" alt="License">
 </p>

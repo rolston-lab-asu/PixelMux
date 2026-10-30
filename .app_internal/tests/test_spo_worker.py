@@ -1,9 +1,4 @@
-"""
-Tests for SPOWorker: the fixed-voltage hold path (existing behavior) and
-the new adaptive-step P&O MPP-tracking path, validated against a
-mock Keithley's diode model with a known Vmpp/Pmax (computed
-independently via a full JV sweep + pv_math.full_iv_report).
-"""
+"""Tests for SPOWorker's fixed-voltage and MPP-tracking holds against the mock Keithley."""
 import numpy as np
 import pytest
 
@@ -16,8 +11,6 @@ AREA_CM2 = 0.0396
 
 
 def _ground_truth(seed=42):
-    """Independent JV sweep -> Vmpp/Pmax for a mock diode, used as the
-    reference."""
     k = MockKeithley(seed=seed)
     k.write("*RST")
     k.write(":SOUR:VOLT:ILIM 0.105")
@@ -33,14 +26,11 @@ def _run_worker(keithley, params):
     worker = SPOWorker(keithley, None, [("A1", None, AREA_CM2)], params)
     worker.pixel_result.connect(lambda r: records.append(r))
     worker.pixel_faulted.connect(lambda *a: faults.append(a))
-    worker.run()  # call synchronously -- no QThread event loop needed
+    worker.run()
     return records, faults
 
 
 def test_fixed_hold_reports_positive_power_at_vmpp():
-    """Fixed hold at the true Vmpp should report power
-    density close to the independently-computed Pmax, and POSITIVE --
-    catches the sign-convention bug."""
     truth = _ground_truth()
     k = MockKeithley(seed=42)
     records, faults = _run_worker(k, {
@@ -98,8 +88,6 @@ def test_mppt_converges_to_vmpp_starting_above():
 
 
 def test_mppt_respects_voltage_ceiling_clamp():
-    """A pathological start point + large step shouldn't walk voltage past
-    v_max, even before the tracker has had a chance to reverse direction."""
     k = MockKeithley(seed=42)
     records, faults = _run_worker(k, {
         "hold_v": 0.40, "duration_s": 2, "interval_s": 0.05,
@@ -114,8 +102,6 @@ def test_mppt_respects_voltage_ceiling_clamp():
 
 
 def test_record_schema_matches_between_modes():
-    """Both modes should emit records with the same keys, so downstream
-    (exporter, results panel) doesn't need to branch on mode."""
     k1 = MockKeithley(seed=42)
     records_fixed, _ = _run_worker(k1, {
         "hold_v": 0.4, "duration_s": 1, "interval_s": 0.2,
@@ -132,22 +118,16 @@ def test_record_schema_matches_between_modes():
 
 
 def test_missing_mppt_enabled_key_defaults_to_fixed_hold():
-    """Backward compatibility: old-format params dicts (no mppt_enabled key
-    at all, e.g. a saved config from before this feature existed) should
-    still run the original fixed-hold behavior."""
     k = MockKeithley(seed=42)
     records, faults = _run_worker(k, {
         "hold_v": 0.4, "duration_s": 1, "interval_s": 0.2,
         "compliance_a": 0.105, "loops": 1,
-        # no "mppt_enabled" key at all
     })
     assert not faults
     assert records[-1]["mppt_enabled"] is False
 
 
 def test_stabilized_pce_matches_jv_pce_at_vmpp():
-    """SPO's stabilized PCE at the true Vmpp should agree with the PCE that
-    a JV sweep independently reports, so the two modes are comparable."""
     truth = _ground_truth()
     k = MockKeithley(seed=42)
     records, _ = _run_worker(k, {
@@ -161,7 +141,6 @@ def test_stabilized_pce_matches_jv_pce_at_vmpp():
 
 
 def test_stabilized_pce_scales_with_irradiance():
-    """At 50 mW/cm2 the same absolute power density is twice the efficiency."""
     k = MockKeithley(seed=42)
     records, _ = _run_worker(k, {
         "hold_v": 0.45, "duration_s": 1, "interval_s": 0.5,
@@ -179,16 +158,13 @@ def test_pin_defaults_to_one_sun_when_absent():
     records, _ = _run_worker(k, {
         "hold_v": 0.45, "duration_s": 1, "interval_s": 0.5,
         "compliance_a": 0.105, "loops": 1, "mppt_enabled": False,
-        # no "pin" key
     })
     assert records[-1]["pin_mw_cm2"] == 100
 
 
 def test_shorted_pixel_is_flagged_at_configured_compliance():
-    """The worker must pass its compliance into check_fault, otherwise a
-    pixel railed at 105 mA is never recognized as SHORT."""
     compliance = 0.105
-    k = MockKeithley(iph=10.0, seed=1)  # absurd Iph -> rails at compliance
+    k = MockKeithley(iph=10.0, seed=1)
     records, faults = _run_worker(k, {
         "hold_v": 0.4, "duration_s": 1, "interval_s": 0.25,
         "compliance_a": compliance, "loops": 1, "mppt_enabled": False,

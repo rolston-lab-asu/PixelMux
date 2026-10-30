@@ -1,8 +1,4 @@
-"""
-JV "SWEEP" tab: the live IV curve plot plus the live-metrics HUD sitting
-beside it. Owns a PlotManager instance. Exposes plain setter methods for
-the controller to push live data in as the sweep runs.
-"""
+"""JV SWEEP tab: live IV plot and metrics readout."""
 from atom.api import Atom, Bool, Callable, Event, List, Typed
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
@@ -30,7 +26,7 @@ class JVPlotPanel(Atom):
     _hud_ff = Typed(QLabel)
     _hud_abort = Typed(QPushButton)
     _shadow_widgets = List()
-    _log = Callable(lambda message: None)  # replaced via set_logger()
+    _log = Callable(lambda message: None)
 
     def get_widget(self):
         return self._widget
@@ -157,7 +153,6 @@ class JVPlotPanel(Atom):
     def _on_export_png_clicked(self):
         self.export_png_requested = True
 
-    # --- Public API for the controller ---
 
     def set_logger(self, log_fn):
         self._log = log_fn

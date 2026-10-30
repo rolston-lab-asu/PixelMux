@@ -1,7 +1,4 @@
-"""
-JV "CONFIG" tab: sweep-parameter form on the left, substrate diagram +
-dataset card on the right. Owns and validates its own inputs.
-"""
+"""JV CONFIG tab: sweep settings plus pixel selection."""
 from atom.api import Atom, Bool, Event, List, Typed
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -29,7 +26,6 @@ class JVConfigPanel(Atom):
 
     _widget = Typed(QWidget)
 
-    # Sweep-parameter inputs
     _v0 = Typed(PlainDoubleField)
     _v1 = Typed(PlainDoubleField)
     _points = Typed(PlainIntField)
@@ -46,7 +42,6 @@ class JVConfigPanel(Atom):
 
     _substrate = Typed(SubstratePanel)
 
-    # Dataset card: Name field, browse icon button, auto-save toggle + path preview
     _name_field = Typed(QLineEdit)
     _autosave_table_checkbox = Typed(QCheckBox)
     _autosave_curves_checkbox = Typed(QCheckBox)
@@ -68,7 +63,6 @@ class JVConfigPanel(Atom):
         self._widget = container
         return container
 
-    # --- Sweep panel ---
 
     def _build_sweep_panel(self):
         panel = QFrame()
@@ -164,7 +158,6 @@ class JVConfigPanel(Atom):
     def _on_run_clicked(self):
         self.run_requested = True
 
-    # --- Substrate diagram ---
 
     def _build_pixel_panel(self):
         panel = QFrame()
@@ -187,7 +180,6 @@ class JVConfigPanel(Atom):
     def _on_substrate_layout_changed(self, change):
         self.layout_changed = True
 
-    # --- Dataset card: relocated from the old header (Name/Browse) ---
 
     def _build_dataset_card(self):
         card = QFrame()
@@ -249,18 +241,13 @@ class JVConfigPanel(Atom):
         effect = make_panel_shadow(widget, self.is_dark_mode)
         self._shadow_widgets = self._shadow_widgets + [effect]
 
-    # --- Public API for the controller ---
 
     def refresh_layout(self, available_width=None):
-        """available_width is accepted-but-unused: kept for interface
-        compatibility"""
         widget = self.get_widget()
         if widget is not None:
             widget.updateGeometry()
 
     def validate(self):
-        """Panel-local validation only (voltage range, pixel selection).
-        Instrument-connection validation is the controller's job."""
         if self._v0.value() == self._v1.value():
             return "ERROR: Start and Stop voltage cannot be the same."
         if not self._substrate.has_active_pixel():
@@ -293,9 +280,6 @@ class JVConfigPanel(Atom):
         self._repolish(self._start_btn)
 
     def flash_alert(self):
-        """Brief red blink on the run button -- used when the user tries
-        to start a run that will immediately fail (e.g. instruments not
-        connected)"""
         self.set_start_button_alert(True)
         QTimer.singleShot(180, lambda: self.set_start_button_alert(False))
         QTimer.singleShot(360, lambda: self.set_start_button_alert(True))

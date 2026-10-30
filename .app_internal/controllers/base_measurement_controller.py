@@ -1,6 +1,4 @@
-"""
-Shared measurement-controller behavior.
-"""
+"""Run lifecycle, auto-save, and exports shared by the JV, SPO and DIT controllers."""
 import os
 import time
 
@@ -12,27 +10,17 @@ from core.exporter import DEFAULT_SAMPLE_NAME
 
 
 class BaseMeasurementController(QObject):
-
-    # --- Per-mode configuration (override in subclasses) ---
-
-    # Suffix on the exporter's mode-specific methods
     EXPORT_SUFFIX = ""
 
-    # Wording for lifecycle log lines: "<RUN_NOUN> complete", etc.
     RUN_NOUN = "Sweep"
-    # Shown when the user starts a run while one is already going.
     ALREADY_RUNNING_MSG = "ERROR: a sweep is already running"
-    # Fills "...export raw <CURVE_NOUN_PLURAL> (.txt)... once the
-    # <COMPLETION_NOUN> completes." in the auto-save-disabled warning.
     CURVE_NOUN_PLURAL = "curves"
     COMPLETION_NOUN = "sweep"
 
-    # Filename frags. and dialog titles for the manual exports.
     PNG_FILENAME_PART = "ivcurve"
     PNG_DIALOG_TITLE = "Export IV Curve Image"
     CSV_FILENAME_PART = "results"
 
-    # DIT has no outer loop concept, so its auto-save log lines omit it.
     AUTOSAVE_LOG_SHOWS_LOOP = True
 
     def __init__(
@@ -76,41 +64,30 @@ class BaseMeasurementController(QObject):
         self.results_panel.observe("delete_selected_requested", lambda change: self.delete_selected_rows())
         self.results_panel.observe("clear_table_requested", lambda change: self.clear_results_table())
 
-        # Dataset card (Name/Auto-Save/pixel-selection) drives the live
-        # path-preview strip.
         self.config_panel.observe("name_changed", self._update_path_preview)
         self.config_panel.observe("autosave_table_toggled", self._update_path_preview)
         self.config_panel.observe("autosave_curves_toggled", self._update_path_preview)
         self.config_panel.observe("layout_changed", self._update_path_preview)
 
-        # Nothing to export yet at startup.
         self.results_panel.set_export_enabled(False)
         self._update_path_preview()
 
-    # --- Subclass hooks ---
 
     def _get_params(self):
-        """Return this mode's params dict from its config panel."""
         raise NotImplementedError
 
     def _make_worker(self, selected, params):
-        """Construct (but don't start) this mode's QThread worker."""
         raise NotImplementedError
 
     def _loop_count(self, params):
-        """How many loops the legend should show. DIT has no outer loop."""
         return params["loops"]
 
     def _prepare_run(self, selected, params):
-        """Optional per-mode setup after the plot is reset but before the
-        worker starts (e.g. DIT's log-scale y-axis)."""
+        pass
 
     def _on_pixel_result(self, record):
-        """Plot the curve, add the table row, and auto-save one finished
-        pixel. Fully mode-specific."""
         raise NotImplementedError
 
-    # --- Exporter helpers (mode-specific method names) ---
 
     def _exporter_call(self, base_name, *args, **kwargs):
         return getattr(self.exporter, f"{base_name}{self.EXPORT_SUFFIX}")(*args, **kwargs)
@@ -131,8 +108,6 @@ class BaseMeasurementController(QObject):
         self.exporter.sample_name = self.get_sample_name() or DEFAULT_SAMPLE_NAME
 
     def _autosave_pixel(self, record):
-        """Incremental auto-save: write THIS pixel's curve/row immediately so
-        a crash mid-run doesn't lose everything already measured."""
         saved_curve = False
         saved_table = False
         curve_filename = None
@@ -163,7 +138,6 @@ class BaseMeasurementController(QObject):
 
         self._update_path_preview()
 
-    # --- Run lifecycle ---
 
     def validate(self):
         if not self.inst.keithley:
@@ -209,9 +183,6 @@ class BaseMeasurementController(QObject):
         self.plot_panel.prepare_legends(selected, self._loop_count(params))
         self._set_running(True)
 
-        # Pass the active hardware connections to the background thread.
-        # To prevent connection conflicts and crashes, do not command or
-        # query the instruments from this GUI thread while the run is going.
         self.worker = self._make_worker(selected, params)
         self.worker.log.connect(self._on_log)
         self.worker.pixel_started.connect(self._on_pixel_started)
@@ -232,7 +203,6 @@ class BaseMeasurementController(QObject):
         self.config_panel.set_running(running)
         self.plot_panel.set_running(running)
 
-    # --- Worker signal slots ---
 
     def _on_log(self, message):
         self.state.log_lines.append(message)
@@ -248,8 +218,6 @@ class BaseMeasurementController(QObject):
         self._add_fault_row(fault_entry)
 
     def _add_fault_row(self, fault_entry):
-        """Fault rows blank out the metric columns, and the modes don't have
-        the same number of them -- so the row shape stays mode-specific."""
         raise NotImplementedError
 
     def _on_sweep_finished(self, aborted, had_error):
@@ -296,7 +264,6 @@ class BaseMeasurementController(QObject):
         self.state.progress_percent = percent
         self.state.progress_text = text
 
-    # --- Results table management (row delete / full clear) ---
 
     def delete_selected_rows(self):
         tokens = self.results_panel.get_selected_row_tokens()
@@ -325,15 +292,12 @@ class BaseMeasurementController(QObject):
         self.results_panel.set_export_enabled(False)
         self.log("Results table cleared")
 
-    # --- Output directory / exports ---
 
     def set_output_dir(self, path):
         self.exporter.output_dir = path
         self._update_path_preview()
 
     def _update_path_preview(self, change=None):
-        """Live preview of where the next auto-saved file will land, or a
-        warning telling the researcher they'll need to export manually."""
         panel = self.config_panel
         table_on = panel.autosave_table_enabled()
         curves_on = panel.autosave_curves_enabled()
@@ -387,13 +351,12 @@ class BaseMeasurementController(QObject):
                 QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
             )
             if not chosen_dir:
-                return  # user cancelled
+                return
             self.exporter.output_dir = chosen_dir
 
         self._write_all_results(auto)
 
     def _write_all_results(self, auto):
-        """JV delegates to the exporter's own batch helper."""
         try:
             for record in self.results:
                 self._save_curve_now(record)
@@ -420,7 +383,7 @@ class BaseMeasurementController(QObject):
                 self.parent_widget, self.PNG_DIALOG_TITLE, suggested_path, "PNG Image (*.png)"
             )
             if not path:
-                return  # user cancelled
+                return
 
             image_exporter = pyqtgraph.exporters.ImageExporter(self.plot_panel.plot_manager.plot.getPlotItem())
             image_exporter.parameters()["width"] = 1600
@@ -449,7 +412,7 @@ class BaseMeasurementController(QObject):
                 self.parent_widget, "Export Results CSV", suggested_path, "CSV File (*.csv)"
             )
             if not path:
-                return  # user cancelled
+                return
 
             headers, rows = self.results_panel.get_export_data()
             with open(path, "w", newline="") as f:

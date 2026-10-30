@@ -1,8 +1,4 @@
-"""
-DIT (Dark Injection Transient) metrics extraction: finds the voltage-step
-transition, subtracts a final-tail baseline current, and integrates the
-transient to get the extracted charge.
-"""
+"""Charge and peak-current extraction from a DIT transient."""
 import numpy as np
 
 

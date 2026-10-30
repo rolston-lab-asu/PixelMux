@@ -1,7 +1,4 @@
-"""
-One full SPO hold. Everything shared lives in BaseMeasurementController; this
-file holds only what's SPO-specific.
-"""
+"""SPO controller: plots each hold and fills the SPO results table."""
 import numpy as np
 
 from controllers.base_measurement_controller import BaseMeasurementController
@@ -10,7 +7,6 @@ from gui.formatting import format_metric
 
 
 class SPOController(BaseMeasurementController):
-
     EXPORT_SUFFIX = "_spo"
     RUN_NOUN = "SPO"
     ALREADY_RUNNING_MSG = "ERROR: an SPO hold is already running"

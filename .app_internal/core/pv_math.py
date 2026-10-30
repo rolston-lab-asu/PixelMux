@@ -1,9 +1,4 @@
-"""
-Pure PV data-analysis functions: JV-curve metric extraction and basic
-fault detection. 
-
-Runnable and testable from a plain terminal against numpy arrays of voltage/current.
-"""
+"""JV metric extraction, Rs/Rsh estimates, and fault detection."""
 import numpy as np
 from scipy.optimize import least_squares
 
@@ -35,13 +30,6 @@ def _interp_zero_crossing(x, y):
 
 
 def derivative_resistances(V, I):
-    """Closed-form Rs/Rsh estimate from local IV slope.
-
-    Rs comes from the slope dV/dI near Voc (I ~ 0); Rsh comes from the
-    slope dV/dI near Isc (V ~ 0). 
-    
-    Always runs, but noisier than the diode-model fit below.
-    """
     V = np.asarray(V, dtype=float)
     I = np.asarray(I, dtype=float)
 
@@ -56,8 +44,8 @@ def derivative_resistances(V, I):
     V = V[order]
     I = I[order]
 
-    # Rs near Voc
     try:
+        # Rs from the slope at Voc is an upper bound.
         voc_idx = np.argmin(np.abs(I))
         rs_lo = max(0, voc_idx - 3)
         rs_hi = min(len(V), voc_idx + 4)
@@ -72,7 +60,6 @@ def derivative_resistances(V, I):
     except Exception:
         Rs = np.nan
 
-    # Rsh near Isc
     try:
         mask = np.abs(V) <= 0.05
         V_rsh = V[mask]
@@ -90,11 +77,7 @@ def derivative_resistances(V, I):
 
 
 def single_diode_model_current(params, V, vt):
-    """
-    Solves the single-diode equation for current (I) at each voltage (V).
-
-    Uses the Newton-Raphson method to iteratively solve the implicit, transcendental 
-    Shockley diode equation with series and shunt resistances.
+    """Solves the single-diode equation for current (I) at each voltage (V).
 
     Parameters
     ----------
@@ -145,13 +128,6 @@ def single_diode_model_current(params, V, vt):
 
 
 def diode_fit_resistances(V, I):
-    """Fit the single-diode model to a JV curve and return (Rs, Rsh).
-
-    Uses bounded least-squares to fit the five-parameter diode model. 
-    To improve convergence, I0 and Rsh are optimized in log10-space.
-
-    Returns (Rs, Rsh) in Ohms. Returns (nan, nan) if the fit fails.
-    """
     V = np.asarray(V, dtype=float)
     I = np.asarray(I, dtype=float)
 
@@ -162,25 +138,23 @@ def diode_fit_resistances(V, I):
     if len(V) < 10:
         return np.nan, np.nan
 
-    vt = 0.02585  # thermal voltage at room temperature
+    vt = 0.02585
 
-    # Unpack log-space parameters [Iph, log10(I0), n, Rs, log10(Rsh)]
+    # Fit I0 and Rsh in log10.
     def unpack(x):
         Iph, log_I0, n, Rs, log_Rsh = x
         return [Iph, 10 ** log_I0, n, Rs, 10 ** log_Rsh]
 
-    # Initial guesses and bounds
     x0 = [
-        max(np.max(I), 1e-9),  # Iph guess
-        -10.0,                 # log10(I0) guess  (I0 ~ 1e-10)
-        1.5,                   # n guess
-        20,                    # Rs guess
-        5.0,                   # log10(Rsh) guess (Rsh ~ 1e5)
+        max(np.max(I), 1e-9),
+        -10.0,
+        1.5,
+        20,
+        5.0,
     ]
     lower = [0, -15, 1.0, 0, 1]
     upper = [1, -3, 4.0, 1e4, 9]
 
-    # Dynamically size f_scale to 1% of current range to prevent loss saturation
     f_scale = max(0.01 * np.max(np.abs(I)), 1e-12)
 
     def residuals(params_x):
@@ -203,7 +177,6 @@ def diode_fit_resistances(V, I):
 
         Iph, I0, n, Rs, Rsh = unpack(result.x)
 
-        # Clip Rsh to a sensible physical maximum
         if Rsh > 1e8:
             Rsh = 1e8
 
@@ -213,11 +186,7 @@ def diode_fit_resistances(V, I):
 
 
 def extract_parameters(V, I, area_cm2, pin_mw_cm2=100):
-    """
-    Extracts J-V characteristics from raw solar cell sweep data.
-
-    Calculates key performance metrics including open-circuit voltage, 
-    short-circuit current density, fill factor, and power conversion efficiency.
+    """Extracts J-V characteristics from raw solar cell sweep data.
 
     Parameters
     ----------
@@ -250,7 +219,6 @@ def extract_parameters(V, I, area_cm2, pin_mw_cm2=100):
     if pin_mw_cm2 <= 0:
         raise ValueError("Incident power must be greater than zero.")
 
-    # J is in mA/cm^2 because A/cm^2 * 1000 = mA/cm^2.
     J = (I / area_cm2) * 1000
 
     order_v = np.argsort(V)
@@ -262,9 +230,6 @@ def extract_parameters(V, I, area_cm2, pin_mw_cm2=100):
     Jsc_raw = _interp_zero_crossing(J_sorted, V_sorted)
     Jsc = abs(Jsc_raw) if np.isfinite(Jsc_raw) else np.nan
 
-    # Electrical power density is V * J in mW/cm^2. The generated-power
-    # quadrant is determined from the short-circuit current polarity, then
-    # restricted to the photovoltaic operating region between 0 V and Voc.
     measured_power = V * J
     if np.isfinite(Jsc_raw) and not np.isclose(Jsc_raw, 0.0):
         current_polarity = np.sign(Jsc_raw)
@@ -308,33 +273,11 @@ def extract_parameters(V, I, area_cm2, pin_mw_cm2=100):
 SHORT_COMPLIANCE_FRACTION = 0.95
 LEGACY_SHORT_THRESHOLD_A = 0.95
 OPEN_THRESHOLD_A = 1e-6
+# Judge SHORT only within this window of 0 V.
 SHORT_CIRCUIT_WINDOW_V = 0.05
 
 
 def check_fault(I, compliance_a=None, V=None, open_threshold_a=OPEN_THRESHOLD_A):
-    """Flags a pixel as SHORT (railed at the source-meter's current limit)
-    or OPEN (essentially no current at all).
-
-    A shorted pixel rails at *whatever compliance is configured*, and 
-    compliance is user-settable per run. Pass `compliance_a` so SHORT is judged
-    relative to that limit; otherwise this falls back to the original fixed
-    threshold, which only ever fires if compliance happens to be set
-    near 1 A and misses real shorts at every normal setting.
-
-    Pass `V` (device voltage per sample) for swept measurements. A healthy
-    cell driven well past Voc goes into forward injection and
-    rails at compliance up there, so "touched compliance somewhere in the
-    sweep" is NOT a short.
-
-    `open_threshold_a` defaults to 1 uA. Per the Keithley 2460 datasheet
-    (SPEC-2460 Rev. C), that sits at the very top of the lowest current
-    range Keithley documents (1 uA, 40 pA RMS noise, +-700 pA accuracy) --
-    fine for JV/SPO, which don't rely on sub-uA measurement. DIT is
-    different since its own sense-range selector goes down to a 100 nA fixed
-    range specifically so small transients are resolvable, and 1 uA would
-    flag nearly that entire range as OPEN. DITWorker passes a lower
-    override for this reason.
-    """
     I = np.asarray(I, dtype=float)
     peak = np.max(np.abs(I))
 
@@ -359,11 +302,7 @@ def check_fault(I, compliance_a=None, V=None, open_threshold_a=OPEN_THRESHOLD_A)
 
 
 def full_iv_report(V, I, area_cm2, pin_mw_cm2=100, fit_resistances=True):
-    """
-    Extracts standard JV parameters and calculates series/shunt resistances.
-
-    This function wraps `extract_parameters` and appends both local slope (derivative)
-    and single-diode model least-squares fit estimates of Rs and Rsh.
+    """Extracts standard JV parameters and calculates series/shunt resistances.
 
     Parameters
     ----------
@@ -376,26 +315,16 @@ def full_iv_report(V, I, area_cm2, pin_mw_cm2=100, fit_resistances=True):
     pin_mw_cm2 : float, optional
         Incident light power density in mW/cm^2. Defaults to 100.
     fit_resistances : bool, optional
-        If True, runs the single-diode model fit using a bounded least-squares
-        optimization. If False, skips the fit to save processing time. Defaults to True.
+        Run the single-diode least-squares fit for Rs/Rsh. Defaults to True.
 
     Returns
     -------
     dict
-        A dictionary containing all standard J-V metrics, with the following 
-        additional keys:
+        The `extract_parameters` metrics plus:
         - "Rs_derivative": Series resistance from local Voc slope (Ohms).
         - "Rsh_derivative": Shunt resistance from local zero-bias slope (Ohms).
         - "Rs_diode_eq": Series resistance from the diode-model fit (Ohms or NaN).
         - "Rsh_diode_eq": Shunt resistance from the diode-model fit (Ohms or NaN).
-
-    Notes
-    -----
-    **Convergence Caveat:**
-    The non-linear single-diode model fit is sensitive to initial parameter guesses and 
-    can stall or converge poorly on degraded, highly resistive, or extremely noisy curves. 
-    In these instances, the least-squares results may rest near their initial bounds. Use 
-    the faster, closed-form 'derivative' outputs as a physical sanity check.
     """
     metrics = extract_parameters(V, I, area_cm2, pin_mw_cm2)
 

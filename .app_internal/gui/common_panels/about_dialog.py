@@ -1,11 +1,4 @@
-"""
-About dialog: app identity, credits, acknowledgements, and license.
-Opened from the header's About action (Home screen only).
-
-Two-column layout: a sidebar carries the identity mark (icon, version,
-repository link) while the main pane carries the descriptive content
-(title, tagline, credits, license, close).
-"""
+"""About dialog: app identity, credits, acknowledgements, and license."""
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
@@ -40,12 +33,9 @@ class AboutDialog(QDialog):
 
         self.setStyleSheet(self._local_qss(colors))
 
-        # Fix both dimensions so the dialog can't be dragged/resized —
-        # width is set above; height is derived from the populated layout.
         self.adjustSize()
         self.setFixedHeight(self.sizeHint().height())
 
-    # --- Column builders ---
 
     def _build_sidebar(self):
         sidebar = QFrame()
@@ -105,7 +95,6 @@ class AboutDialog(QDialog):
 
         return pane
 
-    # --- Row builders ---
 
     def _build_meta_grid(self):
         grid = QGridLayout()

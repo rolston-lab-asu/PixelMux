@@ -1,8 +1,4 @@
-"""
-Background DIT worker (QThread): for each selected pixel, runs a single
-two-level voltage-step transient (repetitions handled inside the SCPI
-driver call itself).
-"""
+"""Background thread that runs one DIT voltage-step transient per selected pixel."""
 import time
 
 from PySide6.QtCore import QThread, Signal
@@ -10,17 +6,13 @@ from PySide6.QtCore import QThread, Signal
 from core.dit_math import calculate_dit_metrics
 from core.pv_math import check_fault
 
-# DIT-specific OPEN floor. check_fault's shared default (1 uA) sits at the
-# top of the lowest current range Keithley documents for the 2460 (SPEC-2460
-# Rev. C: 1 uA range, 40 pA RMS noise, +-700 pA accuracy)
-# DIT's own sense-range selector goes down to a 100 nA fixed range specifically to 
-# resolve small transients, so the shared 1 uA floor would flag nearly that whole 
-# range as OPEN.
-DIT_OPEN_THRESHOLD_A = 5e-10  # 500 pA
+# OPEN floor for DIT's 100 nA sense range.
+DIT_OPEN_THRESHOLD_A = 5e-10
 from instruments.keithley2460 import (
     keithley_output_safe,
     keithley_dit_voltage_step,
 )
+from core.instrument_manager import make_safe
 from instruments.numato_relay import (
     RELAY_SETTLE_S,
     numato_relay_token,
@@ -31,23 +23,18 @@ from instruments.numato_relay import (
 
 
 class DITWorker(QThread):
-    """Runs one DIT pass (all selected pixels, one transient trace each) off the GUI thread."""
-
     log = Signal(str)
     pixel_started = Signal(str)
-    pixel_result = Signal(dict)                     # successful pixel -> full record
-    pixel_faulted = Signal(str, float, str, int)    # pixel, area, fault, loop_number (always 1 for DIT)
-    finished_sweep = Signal(bool, bool)             # (aborted, had_error)
-    progress_update = Signal(int, str)              # (percent_0_to_100, text)
+    pixel_result = Signal(dict)
+    pixel_faulted = Signal(str, float, str, int)
+    finished_sweep = Signal(bool, bool)
+    progress_update = Signal(int, str)
 
     def __init__(self, keithley, relay, selected_pixels, dit_params, parent=None):
         super().__init__(parent)
         self.keithley = keithley
         self.relay = relay
-        self.selected_pixels = selected_pixels  # list of (pixel_label, channel, area_cm2)
-        # dit_params keys: v1, v2, hold1_s, hold2_s, trigger_delay_ms,
-        # integration_ms, current_limit_a, sense_range, fudge_ms, chunk_points,
-        # four_wire, autozero, repetitions, recovery_s
+        self.selected_pixels = selected_pixels
         self.params = dit_params
         self._abort = False
 
@@ -55,8 +42,6 @@ class DITWorker(QThread):
         self._abort = True
 
     def _total_sequence_count(self):
-        """Cosmetic progress denominator only (hold_v1, step,
-        hold_v2, optional recovery, per repetition)."""
         reps = int(self.params["repetitions"])
         has_recovery = self.params["recovery_s"] > 0
         return reps * 3 + max(0, reps - 1) * (1 if has_recovery else 0)
@@ -113,6 +98,7 @@ class DITWorker(QThread):
                         repetitions=p["repetitions"],
                         recovery_s=p["recovery_s"],
                         progress=on_chunk_progress,
+                        should_stop=lambda: self._abort,
                     )
                 finally:
                     keithley_output_safe(self.keithley)
@@ -123,9 +109,6 @@ class DITWorker(QThread):
                 if self._abort:
                     break
 
-                # Fault check b/f any metrics math.
-                # SHORT is judged relative to this run's configured current
-                # limit
                 fault = check_fault(
                     i, compliance_a=p["current_limit_a"], open_threshold_a=DIT_OPEN_THRESHOLD_A,
                 )
@@ -139,7 +122,7 @@ class DITWorker(QThread):
                 record = {
                     "pixel": pixel,
                     "channel": ch,
-                    "loop": 1,  # DIT has no outer loop concept; repetitions live inside one trace
+                    "loop": 1,
                     "area_cm2": area,
                     "v1_v": p["v1"],
                     "v2_v": p["v2"],
@@ -160,10 +143,5 @@ class DITWorker(QThread):
             measurement_error = True
             self.log.emit(f"ERROR: DIT stopped: {e}")
         finally:
-            try:
-                keithley_output_safe(self.keithley)
-                if self.relay is not None:
-                    all_pixels_disconnect(self.relay)
-            except Exception:
-                pass
+            make_safe(self.keithley, self.relay, self.log.emit)
             self.finished_sweep.emit(self._abort, measurement_error)

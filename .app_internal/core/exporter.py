@@ -1,17 +1,7 @@
-"""
-Handles building output paths and writing per-pixel TXT files and the
-summary results table. Pure I/O.
-
-Auto-save uses a different on-disk layout than the manual batch export
-
-  Project_Folder/                  <- exporter.output_dir
-  |-- session_summary.csv          <- one persistent file
-  |-- raw_curves/                  <- raw_curves_dir(): one .txt per pixel
-      |-- SampleA_pixel_A_loop_1_JV.txt
-      |-- SampleA_pixel_A_loop_1_JV_(001).txt   <- safe-overwrite suffix.
-"""
+"""Output paths, run IDs, and TXT/CSV writers for measurement results."""
 import csv
 import os
+import re
 import time
 
 import numpy as np
@@ -20,11 +10,10 @@ RAW_CURVES_SUBDIR = "raw_curves"
 MANIFEST_FILENAME = "session_summary.csv"
 MANIFEST_FILENAME_SPO = "session_summary_spo.csv"
 
-# Single source of truth for the "no name given" fallback.
 DEFAULT_SAMPLE_NAME = "solar_iv_data"
 
 _MANIFEST_HEADER = [
-    "timestamp", "sample_name", "loop", "pixel", "area_cm2",
+    "run_id", "timestamp", "sample_name", "loop", "pixel", "area_cm2",
     "Voc_V", "Jsc_mA_cm2", "FF", "PCE_percent", "Vmpp_V", "Jmp_mA_cm2", "Pmax_mW_cm2",
     "Rs_diode_eq_ohm", "Rsh_diode_eq_ohm", "Rs_derivative_ohm", "Rsh_derivative_ohm",
     "raw_curve_file",
@@ -51,6 +40,8 @@ class ResultsExporter:
         self.output_dir = output_dir
         self.sample_name = sample_name
         self.logger = logger or (lambda msg: None)
+        self._run_id_folder = None
+        self._last_run_id = 0
 
     @staticmethod
     def safe_filename_part(text):
@@ -69,7 +60,6 @@ class ResultsExporter:
             basename = root
         return self.safe_filename_part(basename)
 
-    # --- Auto-save ---
 
     def raw_curves_dir(self, create=True):
         path = os.path.abspath(os.path.join(self.output_dir, RAW_CURVES_SUBDIR))
@@ -80,11 +70,37 @@ class ResultsExporter:
     def manifest_path(self):
         return os.path.abspath(os.path.join(self.output_dir, MANIFEST_FILENAME))
 
-    def _unique_raw_curve_filename(self, pixel, loop, probe_disk=True, suffix="JV"):
-        """Overwrite naming: {name}_pixel_{p}_loop_{n}_{suffix}.txt, and if
-        that exact name already exists in raw_curves/, append _(001), _(002), ... 
-        until a free name """
+
+    def _sync_run_ids(self):
+        folder = os.path.abspath(self.output_dir)
+        if folder == self._run_id_folder:
+            return
+        ids = [0]
+        curves = self.raw_curves_dir(create=False)
+        if os.path.isdir(curves):
+            for name in os.listdir(curves):
+                match = re.search(r"_(\d+)_pixel_", name)
+                if match:
+                    ids.append(int(match.group(1)))
+        if os.path.exists(self.manifest_path()):
+            with open(self.manifest_path(), newline="") as f:
+                ids += [int(row["run_id"]) for row in csv.DictReader(f) if (row.get("run_id") or "").isdigit()]
+        self._run_id_folder = folder
+        self._last_run_id = max(ids)
+
+    def peek_run_id(self):
+        self._sync_run_ids()
+        return self._last_run_id + 1
+
+    def next_run_id(self):
+        self._sync_run_ids()
+        self._last_run_id += 1
+        return self._last_run_id
+
+    def _unique_raw_curve_filename(self, pixel, loop, probe_disk=True, suffix="JV", run_id=None):
         basename = self._basename()
+        if run_id is not None:
+            basename = f"{basename}_{int(run_id):03d}"
         pixel_part = self.safe_filename_part(str(pixel))
         stem = f"{basename}_pixel_{pixel_part}_loop_{int(loop)}_{suffix}"
 
@@ -102,19 +118,12 @@ class ResultsExporter:
                 return candidate
             n += 1
 
-    def preview_txt_path(self, pixel, loop=1, suffix="JV"):
-        """Generates the same filename as save_pixel_now but w/o writing to disk."""
-        filename = self._unique_raw_curve_filename(pixel, loop, probe_disk=True, suffix=suffix)
+    def preview_txt_path(self, pixel, loop=1, suffix="JV", run_id=None):
+        filename = self._unique_raw_curve_filename(pixel, loop, probe_disk=True, suffix=suffix, run_id=run_id)
         return os.path.join(self.raw_curves_dir(create=False), filename)
 
     def save_curve_now(self, record):
-        """Saves a single completed pixel immediately: writes the raw curve 
-        to raw_curves/ and appends a row to session_summary.csv (creating 
-        it if needed). 
-
-        Saving incrementally prevents data loss if the system crashes mid-sweep.
-        """
-        filename = self._unique_raw_curve_filename(record["pixel"], record["loop"])
+        filename = self._unique_raw_curve_filename(record["pixel"], record["loop"], run_id=record.get("run_id"))
         curve_path = os.path.join(self.raw_curves_dir(), filename)
 
         V = np.asarray(record["voltage_v"], dtype=float)
@@ -127,16 +136,16 @@ class ResultsExporter:
         return curve_path, filename
 
     def save_table_row_now(self, record, curve_filename=None):
-        """Incremental auto-save of ONE just-completed pixel's row into the
-        persistent session_summary.csv.
-        """
         manifest_path = self.manifest_path()
         write_header = not os.path.exists(manifest_path)
+        if not write_header:
+            _add_run_id_column(manifest_path)
         with open(manifest_path, "a", newline="") as f:
             writer = csv.writer(f)
             if write_header:
                 writer.writerow(_MANIFEST_HEADER)
             writer.writerow([
+                record.get("run_id", ""),
                 time.strftime("%Y-%m-%d %H:%M:%S"),
                 self.sample_name,
                 int(record["loop"]),
@@ -156,8 +165,6 @@ class ResultsExporter:
                 curve_filename or "",
             ])
 
-    # --- SPO auto-save: same layout/conventions as JV above, own manifest
-    # file and "_SPO" filename suffix. ---
 
     def manifest_path_spo(self):
         return os.path.abspath(os.path.join(self.output_dir, MANIFEST_FILENAME_SPO))
@@ -166,8 +173,6 @@ class ResultsExporter:
         return self.preview_txt_path(pixel, loop, suffix="SPO")
 
     def save_curve_now_spo(self, record):
-        """SPO counterpart of save_curve_now(): writes time_s/voltage_v/
-        power_density."""
         filename = self._unique_raw_curve_filename(record["pixel"], record["loop"], suffix="SPO")
         curve_path = os.path.join(self.raw_curves_dir(), filename)
 
@@ -183,8 +188,6 @@ class ResultsExporter:
         return curve_path, filename
 
     def save_table_row_now_spo(self, record, curve_filename=None):
-        """SPO counterpart of save_table_row_now(): appends to its own
-        session_summary_spo.csv."""
         manifest_path = self.manifest_path_spo()
         write_header = not os.path.exists(manifest_path)
         with open(manifest_path, "a", newline="") as f:
@@ -209,8 +212,6 @@ class ResultsExporter:
                 curve_filename or "",
             ])
 
-    # --- DIT auto-save: same layout/conventions
-    # manifest file and "_DIT" filename suffix. ---
 
     def manifest_path_dit(self):
         return os.path.abspath(os.path.join(self.output_dir, MANIFEST_FILENAME_DIT))
@@ -219,7 +220,6 @@ class ResultsExporter:
         return self.preview_txt_path(pixel, loop, suffix="DIT")
 
     def save_curve_now_dit(self, record):
-        """DIT counterpart of save_curve_now(): writes time_s/voltage_v/current_a."""
         filename = self._unique_raw_curve_filename(record["pixel"], record["loop"], suffix="DIT")
         curve_path = os.path.join(self.raw_curves_dir(), filename)
 
@@ -234,8 +234,6 @@ class ResultsExporter:
         return curve_path, filename
 
     def save_table_row_now_dit(self, record, curve_filename=None):
-        """DIT counterpart of save_table_row_now(): appends to its own
-        session_summary_dit.csv."""
         manifest_path = self.manifest_path_dit()
         write_header = not os.path.exists(manifest_path)
         with open(manifest_path, "a", newline="") as f:
@@ -255,11 +253,9 @@ class ResultsExporter:
                 curve_filename or "",
             ])
 
-    # --- Manual batch export (Export .TXT / Export .CSV buttons) ---
 
     def build_txt_path(self, row):
-        """Curve file path for manual Export .TXT."""
-        filename = self._unique_raw_curve_filename(row["pixel"], row.get("loop", 1))
+        filename = self._unique_raw_curve_filename(row["pixel"], row.get("loop", 1), run_id=row.get("run_id"))
         return os.path.join(self.raw_curves_dir(), filename)
 
     def build_results_table_path(self, timestamp):
@@ -276,13 +272,14 @@ class ResultsExporter:
 
         with open(path, "w") as f:
             f.write(
-                "# loop\tpixel\tarea_cm2\tVoc_V\tJsc_mA_cm2\tFF\t"
+                "# run_id\tloop\tpixel\tarea_cm2\tVoc_V\tJsc_mA_cm2\tFF\t"
                 "PCE_percent\tVmpp_V\tJmp_mA_cm2\tPmax_mW_cm2\t"
                 "Rs_diode_eq_ohm\tRsh_diode_eq_ohm\tRs_derivative_ohm\tRsh_derivative_ohm\t"
                 "status\n"
             )
             for row in rows:
                 f.write(
+                    f"{row.get('run_id', '')}\t"
                     f"{int(row.get('loop', 1))}\t"
                     f"{row['pixel']}\t"
                     f"{row['area_cm2']:.8g}\t"
@@ -332,3 +329,19 @@ class ResultsExporter:
             )
         except Exception as e:
             self.logger(f"ERROR: could not save TXT files: {e}")
+
+
+def _add_run_id_column(path):
+    with open(path, newline="") as f:
+        if f.readline().startswith("run_id,"):
+            return
+        f.seek(0)
+        rows = list(csv.reader(f))
+    if not rows:
+        return
+    tmp = path + ".tmp"
+    with open(tmp, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["run_id"] + rows[0])
+        writer.writerows([""] + row for row in rows[1:])
+    os.replace(tmp, path)

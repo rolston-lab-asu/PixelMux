@@ -1,8 +1,4 @@
-"""
-Substrate diagram + pixel-selection widget: the interactive glass-slide
-pad/trace diagram, its mode selector (6/12/Custom), and the properties
-inspector bar (global default area, or a selected pin's own area override).
-"""
+"""Substrate diagram for choosing pixels and setting their areas."""
 import functools
 
 from atom.api import Atom, Bool, Event, Typed, Value
@@ -34,17 +30,16 @@ class SubstratePanel(Atom):
     _left_pads_layout = Typed(QVBoxLayout)
     _right_pads_layout = Typed(QVBoxLayout)
     _glass_slide_widget = Typed(QFrame)
-    _pad_buttons = Value()        # {pin: QPushButton}
-    _trace_widgets = Value()      # {pin: QFrame}
-    _pixel_pad_widgets = Value()  # {pin: QFrame}
+    _pad_buttons = Value()
+    _trace_widgets = Value()
+    _pixel_pad_widgets = Value()
 
-    _pin_active = Value()      # {pin: bool}
-    _pin_areas = Value()       # {pin: float}
-    _pin_overrides = Value()   # {pin: bool}
+    _pin_active = Value()
+    _pin_areas = Value()
+    _pin_overrides = Value()
     _default_area = Value(0.0396)
     _selected_pin = Value(None)
 
-    # Properties inspector bar
     _inspector_title_lbl = Typed(QLabel)
     _inspector_action_layout = Typed(QHBoxLayout)
     _inspector_main_layout = Typed(QHBoxLayout)
@@ -149,9 +144,6 @@ class SubstratePanel(Atom):
         self._render_layout()
 
     def _current_pin_lists(self):
-        """Returns (left_pins, right_pins) for the current mode. Custom
-        mode is a single directly-wired pixel (no relay) -- shown as one
-        pad in the left column, right column empty."""
         mode = self._pixel_mode.currentText()
         labels = active_pixel_labels(mode)
         if mode == "Custom":
@@ -159,8 +151,6 @@ class SubstratePanel(Atom):
         return labels[0::2], labels[1::2]
 
     def _render_layout(self):
-        """Rebuilds pad buttons + glass-slide trace/marker widgets from
-        scratch for the current mode. Mirrors the mockup's renderLayout()."""
         self._clear_layout(self._left_pads_layout)
         self._clear_layout(self._right_pads_layout)
         for child in list(self._glass_slide_widget.children()):
@@ -170,8 +160,6 @@ class SubstratePanel(Atom):
         left_pins, right_pins = self._current_pin_lists()
         self._default_area = default_pixel_area(self._pixel_mode.currentText())
 
-        # Mode switch resets every visible pin to a fresh state at the new
-        # mode's real default area.
         for pin in left_pins + right_pins:
             self._pin_active[pin] = True
             self._pin_areas[pin] = self._default_area
@@ -259,8 +247,6 @@ class SubstratePanel(Atom):
 
     @staticmethod
     def _repolish(widget):
-        # setProperty() alone doesn't retroactively re-resolve an
-        # attribute-selector QSS rule for an already-polished widget.
         widget.style().unpolish(widget)
         widget.style().polish(widget)
 
@@ -363,7 +349,6 @@ class SubstratePanel(Atom):
                 self._pin_areas[self._selected_pin] = value
         self.layout_changed = True
 
-    # --- Public API for a mode's config panel ---
 
     def has_active_pixel(self):
         return any(self._pin_active.values())
@@ -380,8 +365,6 @@ class SubstratePanel(Atom):
 
     def apply_theme(self, colors, is_dark_mode):
         self.is_dark_mode = is_dark_mode
-        # Static QSS (style.py)| theme change is handled by the global
-        # stylesheet cascade, yet explict repolish per defense.
         for widgets in (self._pad_buttons, self._trace_widgets, self._pixel_pad_widgets):
             for w in widgets.values():
                 self._repolish(w)

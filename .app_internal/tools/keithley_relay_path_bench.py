@@ -1,31 +1,4 @@
-"""
-Bench test for Keithley HI -> Numato NO -> relay COM voltage path.
-
-Default test:
-    - Connect to Keithley 2460 over VISA
-    - Connect to Numato relay board on COM3
-    - Configure Keithley to source 1.0 V with 105 mA current limit
-    - Turn all relays OFF
-    - Turn Keithley output ON
-    - Turn selected relay ON and pause for DMM checks
-    - Turn selected relay OFF and pause for DMM checks
-    - Cleanup: Keithley output OFF and all relays OFF
-
-Run from .app_internal:
-
-    pytest tests/test_keithley_relay_path.py -v
-
-Suggested DMM checks relative to Keithley LO / shared bottom electrode:
-    Relay ON:
-        Keithley HI -> LO should be near source voltage
-        Relay NO   -> LO should be near source voltage
-        Relay COM  -> LO should be near source voltage
-
-    Relay OFF:
-        Keithley HI -> LO should still be near source voltage while output is ON
-        Relay NO   -> LO should still be near source voltage
-        Relay COM  -> LO should be floating/open if NC is unconnected
-"""
+"""Bench test: checks the Keithley HI to relay COM voltage path with a DMM."""
 
 import argparse
 import time

@@ -1,13 +1,11 @@
-"""
-Mock Numato relay.
-"""
+"""Simulated Numato relay."""
 
 
 class MockRelay:
     port = "MOCK"
 
     def __init__(self):
-        self._state = 0  # 16-bit bitmask, bit i = relay i
+        self._state = 0
         self._pending_response = b""
 
     def reset_input_buffer(self):
@@ -46,7 +44,6 @@ class MockRelay:
 
     @staticmethod
     def _channel_from_token(token):
-        # Inverse of numato_relay_token(): '0'-'9' -> 0-9, 'A'-'F' -> 10-15
         if token.isdigit():
             return int(token)
         return ord(token.upper()) - ord("A") + 10
