@@ -2,7 +2,7 @@
 
 APP_NAME = "Pixel Mux"
 APP_NAME_UPPER = "PIXEL MUX"
-APP_VERSION = "v2.0.0 Beta"
+APP_VERSION = "v2.1.0"
 APP_TAGLINE = "Solar Cell IV Characterization"
 
 APP_USER_MODEL_ID = "PixelMux.App"
