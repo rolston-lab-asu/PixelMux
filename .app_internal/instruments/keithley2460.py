@@ -1,7 +1,4 @@
-"""
-Keithley 2460 SourceMeter driver: VISA discovery, SCPI setup, output
-control, and point-by-point sweep reads.
-"""
+"""Keithley 2460 driver: discovery, setup, output control, point reads, and DIT trace sweeps."""
 import time
 
 import numpy as np
@@ -11,54 +8,42 @@ KEITHLEY_SAFE_VOLTAGE = 0.0
 KEITHLEY_DEFAULT_COMPLIANCE_A = 0.105
 KEITHLEY_OUTPUT_SETTLE_S = 0.15
 
-# Wiring convention:
-#   relay NO bus -> Keithley Force HI -> selected individual n-side pixel
-#   shared p-side electrode -> Keithley Force LO
-# GUI voltage is device voltage V(p-side shared electrode) - V(n-side pixel).
-# Keithley source voltage is V(HI) - V(LO), so it is the negative of device voltage.
+# Device voltage is the negative of the Keithley source voltage.
 KEITHLEY_VOLTAGE_FROM_DEVICE_VOLTAGE = -1.0
 
 
 def find_keithley(resource_name=None, logger=None):
-    """
-    Locates the Keithley 2460.
-    """
     backend_note = "NI-VISA"
     try:
-        # 1. Try to use the standard NI-VISA backend (the 800MB driver)
         rm = pyvisa.ResourceManager()
     except Exception:
-        # 2. Fallback: Use the 'pyvisa-py' backend
         backend_note = "pyvisa-py (self-contained)"
         try:
             import libusb_package
             rm = pyvisa.ResourceManager('@py')
         except Exception:
             raise RuntimeError(
-                "No VISA driver found. Please run install.bat to set up "
-                "local drivers or install NI-VISA."
+                "No VISA driver found. Delete the .venv folder and re-run the "
+                "launcher, or install NI-VISA."
             )
 
     if logger:
         logger(f"VISA backend: {backend_note}")
 
-    # If the user provided a specific ID (like 'USB0::0x05E6::...'), use it directly
     if resource_name:
         return rm.open_resource(resource_name)
 
-    # 3. Discovery Loop: USB instruments only.
     for r in rm.list_resources('USB?*::INSTR'):
         try:
             inst = rm.open_resource(r)
-            inst.timeout = 2000 # 2-second limit
+            inst.timeout = 2000
             
             idn = inst.query("*IDN?").upper()
             
-            # Look for Keithley and the specific model number 2460
             if "KEITHLEY" in idn and "2460" in idn:
                 return inst
             
-            inst.close() # Close connection if it's not the right device
+            inst.close()
         except Exception:
             continue
             
@@ -147,8 +132,6 @@ def keithley_output_enable(k, logger=None):
 
 
 def parse_keithley_current(raw):
-    # For the 2460, when SENS:FUNC is CURR, READ? returns the active
-    # measurement reading first. Additional fields, if present, are metadata.
     for part in raw.split(","):
         try:
             return float(part.strip())
@@ -173,8 +156,6 @@ def keithley_read_current(k, device_voltage, point_delay_s):
     raw = k.read().strip()
     return parse_keithley_current(raw), raw, keithley_voltage
 
-
-# --- DIT (Dark Injection Transient): fast timed-current trace-buffer sweeps ---
 
 def keithley_configure_timed_current(
     k,
@@ -208,7 +189,8 @@ def _chunk_sequences(values, max_points_per_chunk):
     return [values[i:i + max_points_per_chunk] for i in range(0, values.size, max_points_per_chunk)]
 
 
-def keithley_run_voltage_program(k, device_voltages, source_delay_s, max_points_per_chunk=500, progress=None):
+def keithley_run_voltage_program(k, device_voltages, source_delay_s, max_points_per_chunk=500, progress=None,
+                                 should_stop=None):
     chunks = _chunk_sequences(device_voltages, int(max_points_per_chunk))
     time_fragments = []
     voltage_fragments = []
@@ -217,6 +199,8 @@ def keithley_run_voltage_program(k, device_voltages, source_delay_s, max_points_
     buffer_name = '"defbuffer1"'
 
     for chunk in chunks:
+        if should_stop is not None and should_stop():
+            break
         points = int(chunk.size)
         source_chunk = keithley_voltage_for_device_voltage(chunk)
         k.write(f"TRAC:CLE {buffer_name}")
@@ -275,6 +259,7 @@ def keithley_dit_voltage_step(
     repetitions=1,
     recovery_s=1.0,
     progress=None,
+    should_stop=None,
 ):
     if current_limit_a <= 0:
         raise ValueError("DIT current limit must be greater than 0 A.")
@@ -322,12 +307,17 @@ def keithley_dit_voltage_step(
                 source_delay_s,
                 max_points_per_chunk=max_points_per_chunk,
                 progress=progress,
+                should_stop=should_stop,
             )
+            if t.size == 0:
+                break
             all_t.append(t + cursor)
             all_v.append(v)
             all_i.append(i)
             cursor = float(all_t[-1][-1] + max(sample_interval_s, 1e-6))
 
+        if not all_t:
+            return np.array([]), np.array([]), np.array([])
         return np.concatenate(all_t), np.concatenate(all_v), np.concatenate(all_i)
     finally:
         keithley_output_safe(k)

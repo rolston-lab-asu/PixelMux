@@ -1,10 +1,4 @@
-"""
-System event log panel. Owns the log text widget, the
-save-directory display, and its own TXT export/clear actions.
-
-This is a RawWidget wrapper around a plain PySide6 widget tree
-given that log_message()/_retheme_log().
-"""
+"""System event log panel."""
 import os
 import time
 
@@ -20,8 +14,6 @@ from core.paths import get_logs_dir
 from gui.effects import make_panel_shadow, update_shadow_color
 from gui.style import get_theme_colors
 
-# Custom QTextFormat property ID used to tag each log run with its
-# semantic color role (e.g. "text_dim", "warning")
 _LOG_ROLE_PROPERTY = QTextFormat.UserProperty + 1
 
 
@@ -34,7 +26,7 @@ class LogPanel(Atom):
     _widget = Typed(QWidget)
     _log = Typed(QTextEdit)
     _output_dir_field = Typed(QLineEdit)
-    _shadow = Value()  # QGraphicsDropShadowEffect, from make_panel_shadow()
+    _shadow = Value()
 
     def get_widget(self):
         return self._widget
@@ -89,7 +81,6 @@ class LogPanel(Atom):
         self._widget = container
         return container
 
-    # --- Public API  ---
 
     def set_output_dir(self, path):
         self.output_dir = path
@@ -100,8 +91,6 @@ class LogPanel(Atom):
         stamp = time.strftime("%H:%M:%S")
         colors = get_theme_colors(self.is_dark_mode)
 
-        # Each log line renders as `[ts] PREFIX: rest`, w/ the prefix (and,
-        # for WARNING/ERROR, the whole line) tinted by severity
         prefix, sep, rest = message.partition(": ")
         prefix_key = prefix.strip().upper()
 
@@ -135,7 +124,7 @@ class LogPanel(Atom):
             write(message, "text_main")
 
         self._log.setTextCursor(cursor)
-        self._log.moveCursor(QTextCursor.End)  # Auto-scroll
+        self._log.moveCursor(QTextCursor.End)
         QApplication.processEvents()
 
     def export_log_data(self):
@@ -161,8 +150,6 @@ class LogPanel(Atom):
         self._retheme_log(colors)
 
     def _retheme_log(self, colors):
-        """Walks the log's existing text runs in place and updates each
-        one's color from its tagged role, using the current theme."""
         doc = self._log.document()
 
         block = doc.begin()
@@ -177,8 +164,6 @@ class LogPanel(Atom):
                         run_cursor.setPosition(frag.position())
                         run_cursor.setPosition(frag.position() + frag.length(), QTextCursor.KeepAnchor)
 
-                        # mergeCharFormat only touches the properties set here
-                        # (foreground + role tag)
                         recolor_fmt = QTextCharFormat()
                         recolor_fmt.setForeground(QColor(colors[role]))
                         recolor_fmt.setProperty(_LOG_ROLE_PROPERTY, role)

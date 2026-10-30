@@ -1,31 +1,10 @@
-"""
-Background sweep worker (QThread) and pixel configuration.
-
-Thread Safety & Hardware Rules:
-  1. Don't touch the Keithley or Relay from the GUI thread while a sweep is running. 
-     Only one thread can talk to the instruments at a time.
-  2. Never modify GUI widgets directly from this thread. Use Qt signals instead.
-  3. Keep the sweep loop inside a try/finally block so the Keithley output and 
-     relays are safely turned off if the sweep is aborted or hits an error.
-"""
+"""Background thread that runs JV sweeps across the selected pixels and loops."""
 import time
 
 import numpy as np
 from PySide6.QtCore import QThread, Signal
 
 from core.pv_math import full_iv_report, check_fault
-from core.pixel_map import (
-    PIXEL_LABELS,
-    PIXEL_TO_RELAY_CHANNEL,
-    DEFAULT_AREA_6_PIXEL_CM2,
-    DEFAULT_AREA_12_PIXEL_CM2,
-    DEFAULT_CUSTOM_AREA_CM2,
-    CUSTOM_PIXEL_MODE,
-    CUSTOM_PIXEL_LABEL,
-    active_pixel_labels,
-    default_pixel_area,
-    pixel_uses_relay,
-)
 from instruments.keithley2460 import (
     init_keithley,
     keithley_output_safe,
@@ -33,6 +12,7 @@ from instruments.keithley2460 import (
     keithley_read_current,
     keithley_source_voltage,
 )
+from core.instrument_manager import make_safe
 from instruments.numato_relay import (
     RELAY_SETTLE_S,
     numato_relay_token,
@@ -43,21 +23,18 @@ from instruments.numato_relay import (
 
 
 class MeasurementWorker(QThread):
-    """Runs one full sweep (all loops x all selected pixels) off the GUI thread."""
-
     log = Signal(str)
     pixel_started = Signal(str)
-    pixel_result = Signal(dict)                     # successful pixel/loop -> full record
-    pixel_faulted = Signal(str, float, str, int)    # pixel, area, fault, loop_number
-    finished_sweep = Signal(bool, bool)             # (aborted, had_error)
-    progress_update = Signal(int, str)              # (percent_0_to_100, text)
+    pixel_result = Signal(dict)
+    pixel_faulted = Signal(str, float, str, int)
+    finished_sweep = Signal(bool, bool)
+    progress_update = Signal(int, str)
 
     def __init__(self, keithley, relay, selected_pixels, sweep_params, parent=None):
         super().__init__(parent)
         self.keithley = keithley
         self.relay = relay
-        self.selected_pixels = selected_pixels  # list of (pixel_label, channel, area_cm2)
-        # sweep_params keys: v0, v1, reverse, pin, compliance_a, point_delay_s, loops, points
+        self.selected_pixels = selected_pixels
         self.params = sweep_params
         self._abort = False
 
@@ -85,7 +62,6 @@ class MeasurementWorker(QThread):
         measurement_error = False
 
         try:
-            # Initialize Keithley to 0V and set the current limit 
             init_keithley(self.keithley, compliance_a=p["compliance_a"], logger=self.log.emit)
             self.log.emit(f"Keithley current compliance set to {p['compliance_a']:.6f} A")
 
@@ -102,11 +78,6 @@ class MeasurementWorker(QThread):
 
                     self.pixel_started.emit(pixel)
 
-                    # --- HARDWARE SAFE SWITCHING SEQUENCE ---
-                    # 1. Bring Keithley to 0V and turn output OFF.
-                    # 2. Isolate all pixels to open-circuit.
-                    # 3. Wait for mechanical contacts to physically settle (RELAY_SETTLE_S).
-                    # 4. Connect target pixel, wait again, and only then enable Keithley output.
 
                     keithley_output_safe(self.keithley)
 
@@ -122,7 +93,6 @@ class MeasurementWorker(QThread):
 
                     keithley_output_enable(self.keithley, logger=self.log.emit)
 
-                    # --- ACTIVE VOLTAGE SWEEP LOOP ---
                     sweep_start, sweep_end = (p["v1"], p["v0"]) if p["reverse"] else (p["v0"], p["v1"])
                     V = np.linspace(sweep_start, sweep_end, p["points"])
                     V_keithley = []
@@ -137,7 +107,6 @@ class MeasurementWorker(QThread):
                         if self._abort:
                             break
 
-                        # --- Emit Progress ---
                         percent = int(((point_idx + 1) / total_points_in_pixel) * 100)
                         self.progress_update.emit(
                             percent, 
@@ -164,8 +133,6 @@ class MeasurementWorker(QThread):
                                 self.log.emit(f"WARNING: could not query Keithley source voltage: {e}")
                         I.append(current)
 
-                    # --- POST-SWEEP SAFE STATE ---
-                    # Immediately kill output and isolate the relay contacts
 
                     keithley_output_safe(self.keithley)
                     if use_relay:
@@ -179,7 +146,6 @@ class MeasurementWorker(QThread):
                     V_keithley = np.asarray(V_keithley, dtype=float)
                     self._log_current_outliers(pixel, V, I, area)
 
-                    # Check for short or open circuit faults before doing math
 
                     fault = check_fault(I, compliance_a=p["compliance_a"], V=V)
                     if fault:
@@ -187,7 +153,6 @@ class MeasurementWorker(QThread):
                         self.log.emit(f"Pixel {pixel} flagged as {fault}")
                         continue
 
-                    # Extract J-V metrics and dispatch them to the GUI
                     metrics = full_iv_report(V, I, area, p["pin"])
                     J = (I / area) * 1000
 
@@ -214,13 +179,5 @@ class MeasurementWorker(QThread):
             measurement_error = True
             self.log.emit(f"ERROR: measurement stopped: {e}")
         finally:
-            # --- HARDWARE TEARDOWN ---
-            # Ensures relays and Keithley default back to off, even on crash or abort
-            try:
-                keithley_output_safe(self.keithley)
-                if self.relay is not None:
-                    all_pixels_disconnect(self.relay)
-            except Exception:
-                pass
+            make_safe(self.keithley, self.relay, self.log.emit)
             self.finished_sweep.emit(self._abort, measurement_error)
-

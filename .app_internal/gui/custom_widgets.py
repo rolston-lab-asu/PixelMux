@@ -1,6 +1,4 @@
-"""
-Small, generic PyQt/pyqtgraph widget overrides with no business logic.
-"""
+"""Small Qt and pyqtgraph widget overrides."""
 from PySide6.QtCore import Qt, QRectF, QSize, Signal
 from PySide6.QtGui import QTextDocument, QFont, QFontMetrics, QDoubleValidator, QIntValidator
 from PySide6.QtWidgets import (
@@ -11,8 +9,6 @@ import pyqtgraph as pg
 
 
 class ClickableFrame(QFrame):
-    """A QFrame that emits `clicked` on left-click, e.g. for card-style
-    buttons that need a richer internal layout than QPushButton allows."""
     clicked = Signal()
 
     def mousePressEvent(self, event):
@@ -47,11 +43,6 @@ class NoWheelComboBox(QComboBox):
 
 
 class _PlainNumberField(QLineEdit):
-    """QLineEdit-based numeric field exposing a QSpinBox/QDoubleSpinBox-
-    shaped API (value()/setValue()/setRange()/valueChanged) s.t. existing
-    call sites (setRange/setDecimals/setValue/.value()/.valueChanged.connect)
-    work fine. (Up/Down arrow key response target).
-    """
     valueChanged = Signal(float)
     _decimals = 0
     _is_int = False
@@ -97,20 +88,16 @@ class _PlainNumberField(QLineEdit):
         try:
             parsed = float(text)
         except ValueError:
-            return  # mid-edit, e.g. just "-" or "" or "." -- let them keep typing
+            return
         clamped = max(self._minimum, min(self._maximum, parsed))
         self._value = clamped
         self.valueChanged.emit(self.value())
 
     def _on_editing_finished(self):
-        # Reformat/clamp the displayed text once editing settles (blur or
-        # Enter) -- same moment a spinbox would normalize its display.
         self.setValue(self._value)
 
 
 class PlainIntField(_PlainNumberField):
-    """Integer counterpart, e.g. Step Count/Loops -- drop-in for
-    NoWheelSpinBox at call sites that never call setDecimals()."""
     _is_int = True
 
     def __init__(self, *args, **kwargs):
@@ -125,15 +112,10 @@ class PlainIntField(_PlainNumberField):
 
 
 class PlainDoubleField(_PlainNumberField):
-    """Drop-in replacement for NoWheelDoubleSpinBox."""
     pass
 
 
 def build_segmented_toggle(labels, colors, accent, checked_index=0):
-    """Shared N-option pill toggle (e.g. OFF/ON, P(t)/V(t))
-
-    Returns (pill_frame, [buttons...], button_group).
-    """
     pill = QFrame()
     pill.setObjectName("TogglePill")
     pill_layout = QHBoxLayout(pill)
@@ -143,8 +125,6 @@ def build_segmented_toggle(labels, colors, accent, checked_index=0):
     bold_font = QFont()
     bold_font.setBold(True)
     metrics = QFontMetrics(bold_font)
-    # Same width for every segment (visually balanced pill), sized to fit
-    # the WIDEST label plus comfortable horizontal padding.
     widest_text = max(labels, key=lambda s: metrics.horizontalAdvance(s))
     seg_width = metrics.horizontalAdvance(widest_text) + 28
 
@@ -169,8 +149,6 @@ def build_segmented_toggle(labels, colors, accent, checked_index=0):
 
 
 def restyle_segmented_toggle(pill, colors, accent):
-    """Re-applies the segmented-toggle QSS, e.g. after a light/dark theme
-    change."""
     text_on_accent = colors.get("success_text_on", colors["accent_text_on"])
     pill.setStyleSheet(f"""
         QFrame#TogglePill {{
@@ -210,9 +188,6 @@ class NoWheelViewBox(pg.ViewBox):
 
 
 class RichTextHeaderView(QHeaderView):
-    """A QHeaderView that renders section labels as HTML instead of plain
-    text. Useful for subscript labelling."""
-
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self.setDefaultAlignment(Qt.AlignCenter)
@@ -225,7 +200,6 @@ class RichTextHeaderView(QHeaderView):
     def paintSection(self, painter, rect, logical_index):
         painter.save()
 
-        # Draw the normal header chrome (background/border) w/o text
         opt = self._style_option(logical_index, rect)
         opt.text = ""
         self.style().drawControl(QStyle.CE_Header, opt, painter, self)
@@ -259,9 +233,6 @@ class RichTextHeaderView(QHeaderView):
         return QSize(size.width(), max(size.height(), 34))
 
     def sectionSizeFromContents(self, logical_index):
-        """`ResizeToContents` calls this (not sectionSizeHint) to size each
-        column. Prevents super-wide columns
-        """
         text = self.model().headerData(logical_index, self.orientation(), Qt.DisplayRole) if self.model() else None
         if not text:
             return super().sectionSizeFromContents(logical_index)
@@ -269,16 +240,14 @@ class RichTextHeaderView(QHeaderView):
         doc = QTextDocument()
         doc.setDefaultFont(self.font())
         doc.setHtml(f'<div style="font-weight:bold; white-space:nowrap;">{text}</div>')
-        doc.setTextWidth(-1)  # natural, unconstrained width
+        doc.setTextWidth(-1)
 
-        width = int(doc.idealWidth()) + 24  # horizontal padding
+        width = int(doc.idealWidth()) + 24
         height = max(int(doc.size().height()) + 14, 34)
         return QSize(width, height)
 
 
 class SafeTabBar(QTabBar):
-    """This computes the needed width directly from real font metrics"""
-
     def tabSizeHint(self, index):
         size = super().tabSizeHint(index)
 
@@ -286,16 +255,12 @@ class SafeTabBar(QTabBar):
         bold_font.setBold(True)
         text_width = QFontMetrics(bold_font).horizontalAdvance(self.tabText(index))
 
-        # Matches the QSS `padding: 12px 28px` (56px total horizontal) plus
-        # a small safety margin.
         needed_width = text_width + 64
         needed_height = max(size.height(), 46)
         return QSize(max(size.width(), needed_width), needed_height)
 
 
 class SizeAwareTabWidget(QTabWidget):
-    """A QTabWidget that reports the size hint of only the visible page"""
-
     def sizeHint(self):
         tab_bar_hint = self.tabBar().sizeHint()
         current = self.currentWidget()

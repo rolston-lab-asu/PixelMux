@@ -1,10 +1,4 @@
-"""
-DIT "SWEEP" tab: the live Current-vs-Time transient plot plus a
-live-metrics HUD.
-
-DIT plots raw current (not density) and always auto-ranges
-(transient timescale/magnitude vary far more between runs.
-"""
+"""DIT SWEEP tab: live current-vs-time plot and metrics readout."""
 from atom.api import Atom, Bool, Callable, Event, List, Typed
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
@@ -158,7 +152,6 @@ class DITPlotPanel(Atom):
     def _on_export_png_clicked(self):
         self.export_png_requested = True
 
-    # --- Public API for the controller ---
 
     def set_logger(self, log_fn):
         self._log = log_fn

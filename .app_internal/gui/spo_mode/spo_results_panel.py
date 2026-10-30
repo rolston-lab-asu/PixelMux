@@ -1,7 +1,4 @@
-"""
-SPO "RESULTS" tab: the final/mean-power table and its Export .TXT / Export
-.CSV buttons.
-"""
+"""SPO RESULTS tab: final and mean power table with export buttons."""
 from atom.api import Atom, Bool, Event, List, Typed
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor
@@ -39,7 +36,7 @@ class SPOResultsPanel(Atom):
     _delete_selected_btn = Typed(QPushButton)
     _clear_table_btn = Typed(QPushButton)
     _shadow = Typed(object)
-    _role_colored_items = List()  # [(QTableWidgetItem, role), ...] for theme refresh
+    _role_colored_items = List()
 
     def get_widget(self):
         return self._widget
@@ -156,7 +153,6 @@ class SPOResultsPanel(Atom):
         if reply == QMessageBox.Yes:
             self.clear_table_requested = True
 
-    # --- Public API for the controller ---
 
     def clear(self):
         self._table.setRowCount(0)
@@ -214,7 +210,6 @@ class SPOResultsPanel(Atom):
                 item.setTextAlignment(Qt.AlignCenter)
 
             if col == self._table.columnCount() - 1:
-                # Status column: green for OK, red for any fault string
                 self._apply_role_color(item, "success" if value == "OK" else "error", role_colored)
                 font = item.font()
                 font.setBold(True)

@@ -1,8 +1,4 @@
-"""
-Tests for SPOConfigPanel. Covers get_spo_params()'s two shapes (tracking off/on),
-including the Settle Time field added alongside Step/Min Step/V Ceiling,
-plus the toggle's visibility wiring and validation.
-"""
+"""Tests for SPOConfigPanel."""
 import pytest
 
 from gui.spo_mode.spo_config_panel import SPOConfigPanel
@@ -17,11 +13,8 @@ def panel(qapp):
     host.resize(host.sizeHint())
     host.show()
     qapp.processEvents()
-    # yield (not return): keeps `host` alive in this frame
     yield p
 
-
-# --- get_spo_params(): tracking OFF -------------------------------------
 
 def test_params_off_has_no_mppt_keys(panel):
     params = panel.get_spo_params()
@@ -40,14 +33,12 @@ def test_params_off_base_keys_and_defaults(panel):
     assert params["loops"] == 1
 
 
-# --- get_spo_params(): tracking ON ---------------------------------------
-
 def test_params_on_includes_settle_s_default(panel, qapp):
     panel._mppt_on_btn.click()
     qapp.processEvents()
     params = panel.get_spo_params()
     assert params["mppt_enabled"] is True
-    assert params["settle_s"] == pytest.approx(2.0)  # default shown in the UI
+    assert params["settle_s"] == pytest.approx(2.0)
 
 
 def test_params_on_settle_s_reflects_user_edit(panel, qapp):
@@ -78,8 +69,6 @@ def test_params_on_step_and_ceiling_unit_conversion(panel, qapp):
     assert params["v_min"] == pytest.approx(0.0)
 
 
-# --- Toggle visibility wiring --------------------------------------------
-
 def test_toggle_off_by_default(panel):
     assert panel.mppt_enabled() is False
     assert panel._hold_v_label.text() == "Hold V (V)"
@@ -106,8 +95,6 @@ def test_toggle_off_again_hides_advanced_rows(panel, qapp):
         assert not row.isVisible()
 
 
-# --- Validation ------------------------------------------------------------
-
 def test_validate_rejects_start_v_above_ceiling(panel, qapp):
     panel._mppt_on_btn.click()
     panel._hold_v.setValue(2.0)
@@ -123,21 +110,17 @@ def test_validate_passes_start_v_at_or_below_ceiling(panel, qapp):
     panel._hold_v.setValue(0.5)
     panel._v_ceiling.setValue(1.5)
     qapp.processEvents()
-    # (no pixel selected in this fixture, so validate() still fails, but not
-    # on the ceiling check -- confirm that specific error is absent)
     err = panel.validate()
     assert err is None or "V Ceiling" not in err
 
 
 def test_validate_ceiling_check_not_applied_when_tracking_off(panel, qapp):
     panel._hold_v.setValue(4.0)
-    panel._v_ceiling.setValue(1.0)  # would fail the check if tracking were on
+    panel._v_ceiling.setValue(1.0)
     qapp.processEvents()
     err = panel.validate()
     assert err is None or "V Ceiling" not in err
 
-
-# --- set_running() disables the new field too -----------------------------
 
 def test_set_running_disables_settle_field(panel, qapp):
     panel._mppt_on_btn.click()

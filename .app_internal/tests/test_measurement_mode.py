@@ -1,6 +1,4 @@
-"""
-Confirms JVController satisfies the MeasurementMode protocol.
-"""
+"""Confirms JVController satisfies the MeasurementMode protocol."""
 from unittest.mock import Mock
 
 from controllers.jv_controller import JVController
@@ -9,8 +7,6 @@ from controllers.measurement_mode import MeasurementMode
 
 def _make_controller():
     config_panel = Mock()
-    # JVController.__init__ now calls _update_path_preview() once (dataset
-    # card / auto-save toggle wiring), which reads these.
     config_panel.autosave_table_enabled.return_value = False
     config_panel.autosave_curves_enabled.return_value = False
     config_panel.get_selected_pixels.return_value = []
@@ -43,8 +39,5 @@ def test_set_output_dir_writes_to_exporter():
 
 def test_state_is_shared_sweep_state_instance():
     controller = _make_controller()
-    # Not part of the protocol check itself, but pins down that `state`
-    # is a real SweepState (not e.g. a plain dict) so future Enaml views
-    # can rely on its ContainerList/Atom-observe behavior.
     from core.sweep_state import SweepState
     assert isinstance(controller.state, SweepState)

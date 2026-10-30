@@ -1,7 +1,4 @@
-"""
-Numato 16-channel USB relay driver: board auto-detection and channel
-on/off commands.
-"""
+"""Numato 16-channel USB relay driver: auto-detection and channel switching."""
 import time
 import re
 
@@ -46,9 +43,6 @@ def find_numato(logger=None):
 
 
 def _confirm_numato(ser, logger=None):
-    """Send a real protocol command and require a real-looking reply
-    before trusting this port.
-    """
     try:
         response = numato_command(ser, "relay readall")
     except Exception as e:
@@ -59,10 +53,6 @@ def _confirm_numato(ser, logger=None):
     if logger:
         logger(f"Handshake response from {ser.port}: {response!r}")
 
-    # A working board replies with a hex status string for its relay bank
-    # (e.g. "0000" for all-off on a 16-channel board). An empty string
-    # (timeout, nothing answered) or non-hex garbage means this port isn't
-    # actually a Numato relay, regardless of whether it opened.
     cleaned = response.replace("\r", "")
     match = re.search(r"^[0-9a-fA-F]{2,8}$", cleaned, re.MULTILINE)
     return bool(match)
@@ -84,11 +74,6 @@ def numato_command(r, command):
 
 
 def all_pixels_disconnect(r, n=None):
-    """Turn all relays off.
-
-    With NC terminals left unconnected, this leaves every pixel top contact
-    floating/isolated until its relay is switched ON to Keithley HI.
-    """
     numato_command(r, "relay writeall 0000")
 
 

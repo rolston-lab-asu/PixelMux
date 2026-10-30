@@ -1,7 +1,4 @@
-"""
-One full DIT (Dark Injection Transient) run. Everything shared lives in
-BaseMeasurementController; this file holds only what's DIT-specific.
-"""
+"""DIT controller: plots each transient and fills the DIT results table."""
 import numpy as np
 
 from controllers.base_measurement_controller import BaseMeasurementController
@@ -10,7 +7,6 @@ from gui.formatting import format_si
 
 
 class DITController(BaseMeasurementController):
-
     EXPORT_SUFFIX = "_dit"
     RUN_NOUN = "DIT"
     ALREADY_RUNNING_MSG = "ERROR: a DIT transient is already running"
@@ -19,7 +15,6 @@ class DITController(BaseMeasurementController):
     PNG_FILENAME_PART = "dit"
     PNG_DIALOG_TITLE = "Export DIT Transient Image"
     CSV_FILENAME_PART = "dit_results"
-    # Repetitions live inside a single trace, so there is no outer loop.
     AUTOSAVE_LOG_SHOWS_LOOP = False
 
     def _get_params(self):
@@ -29,7 +24,7 @@ class DITController(BaseMeasurementController):
         return DITWorker(self.inst.keithley, self.inst.relay, selected, params)
 
     def _loop_count(self, params):
-        return 1  # DIT has no outer loop concept
+        return 1
 
     def _prepare_run(self, selected, params):
         self.plot_panel.set_log_y(self.config_panel.log_plot_enabled())

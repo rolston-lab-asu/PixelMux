@@ -1,9 +1,4 @@
-"""
-Home screen: a grid of workflow-module cards.
-
-Plain Atom panel + imperative PySide6 layout, matching the other
-common_panels (HeaderPanel, LogPanel).
-"""
+"""Home screen: a grid of workflow-module cards."""
 import functools
 
 from atom.api import Atom, Bool, Event, Typed
@@ -34,7 +29,7 @@ class HomePanel(Atom):
 
     is_dark_mode = Bool(False)
 
-    module_selected = Event()  # fires the card's id (str), e.g. "jv"
+    module_selected = Event()
 
     _widget = Typed(QWidget)
 

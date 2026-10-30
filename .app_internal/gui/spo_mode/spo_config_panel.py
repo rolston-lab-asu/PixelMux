@@ -1,7 +1,4 @@
-"""
-SPO "CONFIG" tab: hold-parameter form on the left, substrate diagram +
-dataset card on the right.
-"""
+"""SPO CONFIG tab: hold and MPP-tracking settings plus pixel selection."""
 from atom.api import Atom, Bool, Event, List, Typed
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFontMetrics
@@ -31,7 +28,6 @@ class SPOConfigPanel(Atom):
 
     _widget = Typed(QWidget)
 
-    # Hold-parameter inputs
     _hold_v = Typed(PlainDoubleField)
     _hold_v_label = Typed(QLabel)
     _duration = Typed(PlainDoubleField)
@@ -41,7 +37,6 @@ class SPOConfigPanel(Atom):
     _compliance_ma = Typed(PlainDoubleField)
     _start_btn = Typed(QPushButton)
 
-    # MPP tracking (P&O) toggle + advanced params, shown only when tracking is ON
     _mppt_off_btn = Typed(QPushButton)
     _mppt_on_btn = Typed(QPushButton)
     _mppt_group = Typed(QButtonGroup)
@@ -62,7 +57,6 @@ class SPOConfigPanel(Atom):
 
     _substrate = Typed(SubstratePanel)
 
-    # Dataset card: Name field, browse icon button, auto-save toggle + path preview
     _name_field = Typed(QLineEdit)
     _autosave_table_checkbox = Typed(QCheckBox)
     _autosave_curves_checkbox = Typed(QCheckBox)
@@ -84,7 +78,6 @@ class SPOConfigPanel(Atom):
         self._widget = container
         return container
 
-    # --- Hold-parameter panel ---
 
     def _build_sweep_panel(self):
         panel = QFrame()
@@ -180,7 +173,7 @@ class SPOConfigPanel(Atom):
         self._mppt_hint.setWordWrap(True)
         
         metrics = QFontMetrics(self._mppt_hint.font())
-        wrap_width = 260  # matches this panel's typical inner content width
+        wrap_width = 260
         text_rect = metrics.boundingRect(
             0, 0, wrap_width, 0, Qt.TextWordWrap, self._mppt_hint.text()
         )
@@ -247,8 +240,6 @@ class SPOConfigPanel(Atom):
         self._toggle_pill = pill
 
         row_layout.addWidget(pill)
-        # Note: rows referenced below (hold_v label, advanced param rows) are
-        # built *after* this toggle row, so don't call _apply_mppt_visibility().
         return row
 
     def _on_mppt_toggled(self, _button):
@@ -266,7 +257,6 @@ class SPOConfigPanel(Atom):
         for row in (self._step_row, self._min_step_row, self._ceiling_row, self._settle_row):
             row.setVisible(on)
 
-    # --- Substrate diagram (shared widget) ---
 
     def _build_pixel_panel(self):
         panel = QFrame()
@@ -289,7 +279,6 @@ class SPOConfigPanel(Atom):
     def _on_substrate_layout_changed(self, change):
         self.layout_changed = True
 
-    # --- Dataset card ---
 
     def _build_dataset_card(self):
         card = QFrame()
@@ -351,7 +340,6 @@ class SPOConfigPanel(Atom):
         effect = make_panel_shadow(widget, self.is_dark_mode)
         self._shadow_widgets = self._shadow_widgets + [effect]
 
-    # --- Public API for the controller ---
 
     def refresh_layout(self, available_width=None):
         widget = self.get_widget()
@@ -412,9 +400,6 @@ class SPOConfigPanel(Atom):
         self._repolish(self._start_btn)
 
     def flash_alert(self):
-        """Brief red blink on the run button -- used when the user tries
-        to start a run that will immediately fail (e.g. instruments not
-        connected), rather than a persistent color change."""
         self.set_start_button_alert(True)
         QTimer.singleShot(180, lambda: self.set_start_button_alert(False))
         QTimer.singleShot(360, lambda: self.set_start_button_alert(True))

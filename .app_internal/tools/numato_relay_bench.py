@@ -1,17 +1,4 @@
-"""
-Command-line Numato 16-channel USB relay test.
-
-Default behavior:
-    - Open COM3 at 19200 baud
-    - Turn all relays off
-    - Switch relay 0 through relay 15 one at a time
-    - Hold each relay on for 1 second, then turn it off
-    - Repeat the full sequence 2 times
-
-Run from .app_internal:
-
-    pytest tests/test_numato_relay.py -v
-"""
+"""Bench test: switches each Numato relay on and off in turn."""
 
 import argparse
 import time
@@ -24,14 +11,12 @@ RELAY_COUNT = 16
 
 
 def relay_token(channel):
-    """Numato addresses relay 10-15 as A-F."""
     if not 0 <= channel < RELAY_COUNT:
         raise ValueError(f"Relay channel must be 0 through {RELAY_COUNT - 1}.")
     return str(channel) if channel < 10 else chr(ord("A") + channel - 10)
 
 
 def send_command(port, command, read_bytes=64):
-    """Send one Numato ASCII command and return any response text."""
     if hasattr(port, "reset_input_buffer"):
         port.reset_input_buffer()
     port.write(f"{command}\r".encode("ascii"))
@@ -44,7 +29,7 @@ def all_relays_off(port):
     return send_command(port, "relay writeall 0000")
 
 
-def test_relays(port_name, cycles, delay_s):
+def run_relay_test(port_name, cycles, delay_s):
     print(f"Opening Numato relay board on {port_name} at {BAUD_RATE} baud")
     with serial.Serial(port_name, BAUD_RATE, timeout=0.25, write_timeout=1) as port:
         print("Turning all relays OFF")
@@ -89,7 +74,7 @@ def main():
     if args.delay < 0:
         raise ValueError("--delay must be non-negative")
 
-    test_relays(args.port, args.cycles, args.delay)
+    run_relay_test(args.port, args.cycles, args.delay)
 
 
 if __name__ == "__main__":

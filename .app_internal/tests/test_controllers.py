@@ -1,10 +1,4 @@
-"""
-Characterization tests for the three measurement controllers.
-
-These pin the SHARED behavior (lifecycle, results-table management, path
-preview, export naming) that BaseMeasurementController factors out, plus
-the per-mode strings that must stay mode-specific.
-"""
+"""Characterization tests for the three measurement controllers."""
 from unittest.mock import Mock
 
 import pytest
@@ -176,7 +170,7 @@ def test_abort_requests_abort_on_running_worker(cls):
 def test_abort_is_noop_without_worker(cls):
     c = _make(cls)
     c.worker = None
-    c.abort_measurement()  # must not raise
+    c.abort_measurement()
 
 
 @pytest.mark.parametrize("cls", ALL)
@@ -204,7 +198,7 @@ def test_run_measurement_blocked_when_other_mode_running(cls):
         parent_widget=Mock(), is_other_mode_running=lambda: True,
     )
     c.run_measurement()
-    assert c.worker is None  # never constructed
+    assert c.worker is None
 
 
 @pytest.mark.parametrize("cls", ALL)
@@ -231,8 +225,6 @@ def test_export_csv_warns_when_no_rows(cls):
     c.export_results_csv()
     c.log.assert_any_call("WARNING: No results to export")
 
-
-# --- Per-mode strings that must NOT be collapsed by the refactor --------
 
 @pytest.mark.parametrize("cls,expected", [
     (JVController, "Sweep complete"),
@@ -262,7 +254,6 @@ def test_each_mode_keeps_its_own_abort_message(cls, expected):
     (DITController, "manifest_path_dit"),
 ])
 def test_each_mode_uses_its_own_manifest(cls, method):
-    """Auto-save summary must point at that mode's own session_summary CSV."""
     c = _make(cls, autosave_table_enabled=True, autosave_curves_enabled=True)
     c.results = [{"pixel": "A"}]
     c._on_sweep_finished(aborted=False, had_error=False)

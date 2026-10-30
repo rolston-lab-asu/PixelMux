@@ -1,13 +1,6 @@
-"""
-Builds the header, the mode tabs, the log panel, and the footer progress strip. then hands them off to the
-controllers to process respective button presses.
-"""
-import os
-
-import pyqtgraph as pg
-from PySide6.QtCore import QTimer
-from PySide6.QtGui import QFont, QColor
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QStackedWidget
+"""Main window: builds the header, mode pages, and controllers, and handles quitting."""
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QStackedWidget, QMessageBox
 
 from core.app_info import APP_NAME
 from core.instrument_manager import InstrumentManager
@@ -38,8 +31,8 @@ class MainWindow(QWidget):
 
         self.is_dark_mode = False
         self._shadow_widgets = []
-        self._theme_aware_panels = []  # anything with an apply_theme(colors, is_dark_mode) method
-        self._active_mode_count = 0  # how many modes (JV/SPO/DIT) currently have a sweep running
+        self._theme_aware_panels = []
+        self._active_mode_count = 0
         self.mock = mock
 
         self.setWindowTitle(APP_NAME)
@@ -58,7 +51,6 @@ class MainWindow(QWidget):
         self.setFont(QFont("Segoe UI", 10))
         self.setStyleSheet(get_theme(self.is_dark_mode))
 
-    # --- Layout assembly ---
 
     def _build_ui(self):
         main = QVBoxLayout(self)
@@ -78,9 +70,9 @@ class MainWindow(QWidget):
         self.home_panel = HomePanel(is_dark_mode=self.is_dark_mode)
         self._register_theme_aware(self.home_panel)
         self.home_panel.observe("module_selected", self._on_module_selected)
-        self.stack.addWidget(self.home_panel.create_widget(self.stack))  # HOME_PAGE_INDEX
+        self.stack.addWidget(self.home_panel.create_widget(self.stack))
 
-        self._mode_pages = {}  # module_id -> stack index, for _on_module_selected
+        self._mode_pages = {}
 
         self.jv_view = JVMainView(is_dark_mode=self.is_dark_mode, output_dir=self.output_dir)
         self._register_theme_aware(self.jv_view)
@@ -99,7 +91,6 @@ class MainWindow(QWidget):
     def _register_theme_aware(self, panel):
         self._theme_aware_panels.append(panel)
 
-    # --- Controller wiring ---
 
     def _wire_controllers(self):
         self.exporter = ResultsExporter(self.output_dir, "Sample", self.jv_view.log_panel.log_message)
@@ -130,7 +121,6 @@ class MainWindow(QWidget):
         self.main_controller.register_mode_controller(self.jv_controller)
         self._wire_mode_state(self.jv_view, self.jv_controller)
 
-        # Browse is on the dataset card.
         self.jv_view.config_panel.observe(
             "browse_requested", lambda change: self.main_controller.choose_output_dir()
         )
@@ -176,10 +166,6 @@ class MainWindow(QWidget):
         )
 
     def _wire_mode_state(self, view, controller):
-        """Cross-panel running state (start/abort/connect/browse all need
-        to agree on whether a hold/sweep is in flight) -- bound to this
-        specific mode's own view/controller pair, so JV and SPO (&
-        future modes) each drive only their own footer/HUD."""
         controller.state.observe(
             "running", lambda change, v=view: self._on_running_changed(change, v)
         )
@@ -190,7 +176,6 @@ class MainWindow(QWidget):
             "progress_text", lambda change, v=view, c=controller: self._on_progress_update(v, c)
         )
 
-    # --- Cross-cutting state broadcasts ---
 
     def _on_running_changed(self, change, view):
         running = change["value"]
@@ -200,9 +185,6 @@ class MainWindow(QWidget):
         view.set_running(running)
 
     def is_any_mode_running(self):
-        """Shared hardware guard: JV/SPO/DIT all drive the same physical
-        Keithley/relay through InstrumentManager, so only one mode may run
-        a measurement at a time."""
         return self._active_mode_count > 0
 
     def _on_progress_update(self, view, controller):
@@ -230,6 +212,25 @@ class MainWindow(QWidget):
         self.stack.setCurrentIndex(HOME_PAGE_INDEX)
         self.header_panel.set_workspace_mode(False)
         self.header_panel.set_mode(None, get_theme_colors(self.is_dark_mode))
+
+    def closeEvent(self, event):
+        running = [
+            c.worker for c in (self.jv_controller, self.spo_controller, self.dit_controller)
+            if c.worker is not None and c.worker.isRunning()
+        ]
+        if running:
+            answer = QMessageBox.question(
+                self, "Measurement running",
+                "A measurement is still running. Abort it and quit?",
+            )
+            if answer != QMessageBox.Yes:
+                event.ignore()
+                return
+            for worker in running:
+                worker.request_abort()
+                worker.wait()
+        self.instrument_manager.close_all()
+        super().closeEvent(event)
 
     def toggle_theme(self):
         self.is_dark_mode = not self.is_dark_mode

@@ -1,9 +1,4 @@
-"""
-DIT "CONFIG" tab: voltage-step + acquisition parameter form on the left,
-substrate diagram + dataset card on the right. 
-
-Split into a "Voltage Step" group and an "Acquisition" group.
-"""
+"""DIT CONFIG tab: voltage-step and acquisition settings plus pixel selection."""
 from atom.api import Atom, Bool, Event, List, Typed
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -33,7 +28,6 @@ class DITConfigPanel(Atom):
 
     _widget = Typed(QWidget)
 
-    # Voltage-step inputs
     _v1 = Typed(PlainDoubleField)
     _v2 = Typed(PlainDoubleField)
     _hold1 = Typed(PlainDoubleField)
@@ -41,7 +35,6 @@ class DITConfigPanel(Atom):
     _repetitions = Typed(PlainIntField)
     _recovery = Typed(PlainDoubleField)
 
-    # Acquisition inputs
     _trigger_delay = Typed(PlainDoubleField)
     _integration = Typed(PlainDoubleField)
     _current_limit_ma = Typed(PlainDoubleField)
@@ -59,7 +52,6 @@ class DITConfigPanel(Atom):
 
     _substrate = Typed(SubstratePanel)
 
-    # Dataset card
     _name_field = Typed(QLineEdit)
     _autosave_table_checkbox = Typed(QCheckBox)
     _autosave_curves_checkbox = Typed(QCheckBox)
@@ -81,7 +73,6 @@ class DITConfigPanel(Atom):
         self._widget = container
         return container
 
-    # --- Voltage-step / acquisition panel ---
 
     def _build_sweep_panel(self):
         panel = QFrame()
@@ -108,8 +99,6 @@ class DITConfigPanel(Atom):
             return lbl
 
         def make_field(label_text, widget):
-            """Label-above-field block, for a 2-per-row grid -- far more
-            vertically compact than one full-width row per field."""
             block = QWidget()
             block.setObjectName("FieldBlock")
             block_layout = QVBoxLayout(block)
@@ -129,7 +118,6 @@ class DITConfigPanel(Atom):
             grid.setColumnStretch(1, 1)
             return grid
 
-        # --- Voltage step group ---
         self._v1 = PlainDoubleField()
         self._v1.setRange(-5, 5)
         self._v1.setDecimals(3)
@@ -169,7 +157,6 @@ class DITConfigPanel(Atom):
         voltage_grid.addWidget(make_field("Recovery (s)", self._recovery), 2, 1)
         layout.addLayout(voltage_grid)
 
-        # --- Acquisition group ---
         self._trigger_delay = PlainDoubleField()
         self._trigger_delay.setRange(0, 10000)
         self._trigger_delay.setDecimals(3)
@@ -238,7 +225,6 @@ class DITConfigPanel(Atom):
     def _on_run_clicked(self):
         self.run_requested = True
 
-    # --- Substrate diagram (shared widget) ---
 
     def _build_pixel_panel(self):
         panel = QFrame()
@@ -261,7 +247,6 @@ class DITConfigPanel(Atom):
     def _on_substrate_layout_changed(self, change):
         self.layout_changed = True
 
-    # --- Dataset card ---
 
     def _build_dataset_card(self):
         card = QFrame()
@@ -323,7 +308,6 @@ class DITConfigPanel(Atom):
         effect = make_panel_shadow(widget, self.is_dark_mode)
         self._shadow_widgets = self._shadow_widgets + [effect]
 
-    # --- Public API for the controller ---
 
     def validate(self):
         if self._v1.value() == self._v2.value():
@@ -367,9 +351,6 @@ class DITConfigPanel(Atom):
         self._repolish(self._start_btn)
 
     def flash_alert(self):
-        """Brief red blink on the run button -- used when the user tries
-        to start a run that will immediately fail (e.g. instruments not
-        connected), rather than a persistent color change."""
         self.set_start_button_alert(True)
         QTimer.singleShot(180, lambda: self.set_start_button_alert(False))
         QTimer.singleShot(360, lambda: self.set_start_button_alert(True))

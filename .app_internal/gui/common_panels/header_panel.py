@@ -1,13 +1,4 @@
-"""
-Top header bar: brand title, Keithley/Relay status LEDs, connect button,
-and the theme toggle.
-
-Plain Atom object + imperative PySide6 layout, not Enaml given uncomptability.
-Instead, simply focus on atom stuff.
-
-Qt-facing signals (connect_clicked/theme_toggled) are plain Atom Events;
-controllers use `.observe(...)`.
-"""
+"""Top header bar: title, instrument status lights, connect button, and theme toggle."""
 from atom.api import Atom, Bool, Event, Typed
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
@@ -25,7 +16,7 @@ class HeaderPanel(Atom):
 
     is_dark_mode = Bool(False)
     _in_workspace = Bool(False)
-    _active_mode = Typed(object)  # None on Home, else "jv"/"spo"/"dit"
+    _active_mode = Typed(object)
 
     connect_clicked = Event()
     theme_toggled = Event()
@@ -103,8 +94,6 @@ class HeaderPanel(Atom):
         self.about_clicked = True
 
     def _on_action_btn_clicked(self):
-        # One button, two identities: home glyph + `home_clicked` while a
-        # workspace is open, theme glyph + `theme_toggled` on the Home screen.
         if self._in_workspace:
             self.home_clicked = True
         else:
@@ -112,7 +101,7 @@ class HeaderPanel(Atom):
 
     def _refresh_action_btn(self):
         if self._in_workspace:
-            self._theme_btn.setText("\U0001F3E0")  # house
+            self._theme_btn.setText("\U0001F3E0")
         else:
             self._theme_btn.setText("\u2600\ufe0f" if self.is_dark_mode else "\U0001F319")
 
@@ -121,19 +110,13 @@ class HeaderPanel(Atom):
         widget.style().unpolish(widget)
         widget.style().polish(widget)
 
-    # --- Public API (unchanged names/signatures from the old QFrame/enaml versions) ---
 
     def set_workspace_mode(self, in_workspace):
-        """Switches the action button between theme-toggle (Home) and
-        back-to-home (Workspace) identities. The About trigger is a
-        Home-only affordance, so it hides while a workspace is open."""
         self._in_workspace = in_workspace
         self._about_btn.setVisible(not in_workspace)
         self._refresh_action_btn()
 
     def set_mode(self, mode, colors):
-        """Swaps the brand title to the active mode's name/color (e.g.
-        'SPO' in green). Pass mode=None to restore the default brand."""
         self._active_mode = mode
         if mode is None:
             self._brand_title.setText(BRAND_TITLE)
@@ -153,8 +136,6 @@ class HeaderPanel(Atom):
         self._connect_btn.setEnabled(not running)
 
     def flash_home_alert(self):
-        """Brief red blink on the home/theme button -- used when the user
-        tries to leave a mode while it has an active sweep running."""
         self._set_flashing(True)
         QTimer.singleShot(180, lambda: self._set_flashing(False))
         QTimer.singleShot(360, lambda: self._set_flashing(True))
@@ -169,6 +150,4 @@ class HeaderPanel(Atom):
         self._refresh_action_btn()
         refresh_led_glow(self._keithley_led, colors)
         refresh_led_glow(self._relay_led, colors)
-        # Re-apply the active mode's brand color so it stays correct
-        # (light vs dark hex differ) across a theme toggle.
         self.set_mode(self._active_mode, colors)

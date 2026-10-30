@@ -1,6 +1,4 @@
-"""
-Shared helper for rendering the app's icon mark.
-"""
+"""Renders the app icon mark."""
 import os
 
 from PySide6.QtCore import Qt
@@ -14,8 +12,6 @@ def icon_path():
 
 
 def rounded_icon(size, radius):
-    """Center-crops the app icon to a square and clips it to rounded
-    corners."""
     src = QPixmap(icon_path())
     if src.isNull():
         return src

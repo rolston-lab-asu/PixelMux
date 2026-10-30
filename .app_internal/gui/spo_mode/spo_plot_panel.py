@@ -1,7 +1,4 @@
-"""
-SPO "SWEEP" tab: the live Power-vs-Time (or Voltage-vs-Time) plot plus a
-live-metrics HUD sitting beside it.
-"""
+"""SPO SWEEP tab: live power- or voltage-vs-time plot and metrics readout."""
 from atom.api import Atom, Bool, Callable, Dict, Event, List, Str, Typed
 import pyqtgraph as pg
 from PySide6.QtCore import Qt
@@ -33,19 +30,13 @@ class SPOPlotPanel(Atom):
     _shadow_widgets = List()
     _log = Callable(lambda message: None)
 
-    # View toggle: which series the plot currently shows.
-    _view_mode = Str("power")  # "power" or "voltage"
+    _view_mode = Str("power")
     _view_power_btn = Typed(QPushButton)
     _view_voltage_btn = Typed(QPushButton)
     _view_toggle_group = Typed(object)
     _view_toggle_pill = Typed(QFrame)
 
-    # Cached per-curve data so toggling redraws instantly without re-running
-    # the hold: {(channel, loop_number): {"t":[...], "v":[...], "p":[...]}}
     _series_cache = Dict()
-    # {(channel, loop_number): PlotDataItem} -- updated in place via setData()
-    # on toggle, rather than clearing/re-adding (which would also disturb
-    # the pixel/loop legend).
     _curve_items = Dict()
 
     def get_widget(self):
@@ -204,7 +195,6 @@ class SPOPlotPanel(Atom):
     def _on_export_png_clicked(self):
         self.export_png_requested = True
 
-    # --- Public API for the controller ---
 
     def set_logger(self, log_fn):
         self._log = log_fn
@@ -224,8 +214,6 @@ class SPOPlotPanel(Atom):
         self.plot_manager.reset_legends(selected_pixels, loop_count)
 
     def plot_curve(self, t, voltage, power_density, channel, loop_number):
-        """Caches both series for this (channel, loop) and plots whichever
-        one is currently selected by the P(t)/V(t) toggle."""
         key = (channel, loop_number)
         self._series_cache = {**self._series_cache, key: {
             "t": list(t), "v": list(voltage), "p": list(power_density),
@@ -235,8 +223,6 @@ class SPOPlotPanel(Atom):
         self._curve_items = {**self._curve_items, key: item}
 
     def set_view_mode(self, mode):
-        """Switches the plotted series (power density vs. voltage) for every
-        curve already drawn this run, in place."""
         if mode not in ("power", "voltage"):
             return
         self._view_mode = mode

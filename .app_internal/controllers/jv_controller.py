@@ -1,7 +1,4 @@
-"""
-One full JV sweep. Everything shared lives in BaseMeasurementController; 
-this file holds only what's JV-specific.
-"""
+"""JV controller: plots each sweep, assigns run IDs, and fills the JV results table."""
 import numpy as np
 
 from controllers.base_measurement_controller import BaseMeasurementController
@@ -15,8 +12,7 @@ _METRIC_KEYS = (
 
 
 class JVController(BaseMeasurementController):
-
-    EXPORT_SUFFIX = ""  # JV owns the exporter's unsuffixed methods
+    EXPORT_SUFFIX = ""
     RUN_NOUN = "Sweep"
     ALREADY_RUNNING_MSG = "ERROR: a sweep is already running"
     CURVE_NOUN_PLURAL = "curves"
@@ -31,7 +27,11 @@ class JVController(BaseMeasurementController):
     def _make_worker(self, selected, params):
         return MeasurementWorker(self.inst.keithley, self.inst.relay, selected, params)
 
+    def _preview_txt_path(self, pixel):
+        return self.exporter.preview_txt_path(pixel, run_id=self.exporter.peek_run_id())
+
     def _on_pixel_result(self, record):
+        record["run_id"] = self.exporter.next_run_id()
         self.results.append(record)
         self.state.results.append(record)
         V = np.asarray(record["voltage_v"], dtype=float)
@@ -41,7 +41,7 @@ class JVController(BaseMeasurementController):
         metrics = {k: record[k] for k in _METRIC_KEYS}
         self.results_panel.add_result_row(
             record["pixel"], record["area_cm2"], metrics, "OK", record["loop"],
-            row_token=id(record),
+            row_token=id(record), run_id=record["run_id"],
         )
 
         self.plot_panel.set_active_pixel(record["pixel"])
@@ -60,5 +60,4 @@ class JVController(BaseMeasurementController):
         )
 
     def _write_all_results(self, auto):
-        # JV has its own batch writer on the exporter.
         self.exporter.save_results(self.results, auto=auto)

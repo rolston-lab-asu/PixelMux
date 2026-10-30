@@ -1,12 +1,4 @@
-"""
-JV mode container: builds the CONFIG/SWEEP/RESULTS/LOGS tab strip and the
-sweep-progress footer, and owns the 4 JV panels + tabs as attributes so
-MainWindow (and JVController) can wire into them without knowing how the
-JV workspace is assembled internally.
-
-Plain Atom object + imperative PySide6 layout, matching the other
-gui/*_mode containers.
-"""
+"""JV workspace: tab strip, progress footer, and the four JV panels."""
 from atom.api import Atom, Bool, List, Str, Typed, Value
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFrame, QLabel, QProgressBar, QScrollArea
@@ -30,7 +22,7 @@ class JVMainView(Atom):
     is_dark_mode = Bool(False)
     output_dir = Str()
 
-    theme_aware_panels = List()  # populated during create_widget()
+    theme_aware_panels = List()
 
     _widget = Typed(QWidget)
     tabs = Typed(SizeAwareTabWidget)
@@ -60,31 +52,25 @@ class JVMainView(Atom):
         self.tabs.tabBar().setElideMode(Qt.ElideNone)
         self.tabs.tabBar().setExpanding(False)
 
-        # Small screens (1080p and below): Scrolls instead of clipping buttons off the bottom of the window.
-        # per instance size constraints is overceded.
         self.scroll = scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setWidget(self.tabs)
         layout.addWidget(scroll, 1)
 
-        # TAB 1: CONFIG
         self.config_panel = JVConfigPanel(is_dark_mode=self.is_dark_mode)
         self.theme_aware_panels.append(self.config_panel)
         self.tabs.addTab(self.config_panel.create_widget(self.tabs), "1. CONFIG")
         self.config_panel.observe("layout_changed", self._on_config_layout_changed)
 
-        # TAB 2: SWEEP
         self.plot_panel = JVPlotPanel(is_dark_mode=self.is_dark_mode)
         self.theme_aware_panels.append(self.plot_panel)
         self.tabs.addTab(self.plot_panel.create_widget(self.tabs), "2. SWEEP")
 
-        # TAB 3: RESULTS
         self.results_panel = JVResultsPanel(is_dark_mode=self.is_dark_mode)
         self.theme_aware_panels.append(self.results_panel)
         self.tabs.addTab(self.results_panel.create_widget(self.tabs), "3. RESULTS")
 
-        # TAB 4: LOGS
         self.log_panel = LogPanel(output_dir=self.output_dir, is_dark_mode=self.is_dark_mode)
         self.theme_aware_panels.append(self.log_panel)
         self.tabs.addTab(self.log_panel.create_widget(self.tabs), "4. LOGS")
@@ -133,13 +119,10 @@ class JVMainView(Atom):
         self.tabs.updateGeometry()
 
     def _on_config_layout_changed(self, change):
-        # The pixel grid rebuilt itself after a debounce delay, so
-        # re-measure the tab widget/scroll area.
         self.config_panel.get_widget().updateGeometry()
         self.tabs.updateGeometry()
         self.scroll.updateGeometry()
 
-    # --- Public API (used by MainWindow, which owns cross-mode state) ---
 
     def set_running(self, running):
         self.footer.setVisible(running)

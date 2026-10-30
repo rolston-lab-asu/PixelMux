@@ -1,13 +1,11 @@
-"""
-Mock Keithley 2460
-"""
+"""Simulated Keithley 2460 backed by the single-diode model."""
 import random
 
 import numpy as np
 
 from core.pv_math import single_diode_model_current
 
-_VT = 0.02585  # thermal voltage at room temperature, matches pv_math.py's own default
+_VT = 0.02585
 
 
 class MockKeithley:
@@ -20,7 +18,6 @@ class MockKeithley:
         self._noise_a = noise_a
         self._rng = random.Random(seed)
         
-        # DIT trace-buffer state (TRAC:CLE / SOUR:SWE:VOLT:LIN / INIT / TRAC:DATA?)
         self._pending_sweep = None
         self._last_trace_values = []
 
@@ -35,9 +32,6 @@ class MockKeithley:
         if command == "*CLS":
             return
 
-        # SCPI's leading colon is optional (":SOUR:VOLT" == "SOUR:VOLT"); the
-        # DIT driver (keithley2460.py) writes some commands w/o it, so
-        # normalize before matching the branches below.
         if not command.startswith(":"):
             command = ":" + command
 
@@ -48,7 +42,7 @@ class MockKeithley:
         elif command == ":INIT":
             self._run_pending_sweep()
         elif command.startswith(":SOUR:VOLT:RANG"):
-            pass  # range hint only, mock doesn't need a real range
+            pass
         elif command.startswith(":SOUR:VOLT:ILIM"):
             try:
                 self._compliance_a = float(command.split()[-1])
@@ -61,9 +55,6 @@ class MockKeithley:
                 pass
         elif command.startswith(":OUTPut:STATe"):
             self._output_on = command.strip().upper().endswith("ON")
-        # :SENS:FUNC, :SENS:CURR:RANG:AUTO, :SENS:CURR:NPLC, :SYST:AZER,
-        # :SENS:CURR:RSEN, :ROUT:TERM, :OUTP:VOLT:SMOD, :SOUR:VOLT:READ:BACK
-        # -- accepted, no state to track for a mock.
 
     def query(self, command):
         command = command.strip()
@@ -80,9 +71,6 @@ class MockKeithley:
         return "0"
 
     def query_ascii_values(self, command):
-        """DIT-only: pyvisa parses a comma-separated ASCII reply into a list
-        of floats for TRAC:DATA?; the mock just returns the trace it
-        computed for the most recent INIT directly."""
         command = command.strip()
         if command.startswith("TRAC:DATA?"):
             return list(self._last_trace_values)
@@ -97,7 +85,6 @@ class MockKeithley:
     def _simulate_current(self, device_voltage=None):
         if not self._output_on:
             return 0.0
-        # Keithley source voltage is the negative of device voltage
         if device_voltage is None:
             device_voltage = -self._source_voltage
         current = single_diode_model_current(
@@ -109,7 +96,6 @@ class MockKeithley:
 
     @staticmethod
     def _parse_sweep_program(command):
-        # ":SOUR:SWE:VOLT:LIN start,stop,points,delay"
         payload = command.split(None, 1)[1] if " " in command else ""
         start, stop, points, delay = payload.split(",")
         return float(start), float(stop), int(float(points)), float(delay)
@@ -125,7 +111,7 @@ class MockKeithley:
         if not self._output_on:
             current = np.zeros(points)
         else:
-            device_v = -source_v  # mirrors _simulate_current's own sign convention
+            device_v = -source_v
             current = single_diode_model_current(
                 [self._iph, self._i0, self._n, self._rs, self._rsh], device_v, _VT,
             )
@@ -134,7 +120,7 @@ class MockKeithley:
 
         flat = []
         for idx in range(points):
-            rel_time = idx * max(delay, 1e-6)  # matches source_delay_s spacing on real hardware
+            rel_time = idx * max(delay, 1e-6)
             flat.extend([rel_time, float(source_v[idx]), float(current[idx]), 0.0, 0.0])
         self._last_trace_values = flat
         self._source_voltage = float(source_v[-1])
